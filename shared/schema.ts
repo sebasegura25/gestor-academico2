@@ -46,6 +46,7 @@ export const students = pgTable("students", {
   careerId: integer("career_id").notNull(),
   fileNumber: text("file_number").notNull().unique(),
   documentId: text("document_id").notNull(),
+  enrollmentYear: integer("enrollment_year").notNull(),
   enrollmentDate: timestamp("enrollment_date").notNull(),
   status: text("status").notNull().default("active"), // "active", "inactive", "graduated"
   createdAt: timestamp("created_at").defaultNow(),
@@ -106,6 +107,7 @@ export const insertStudentSchema = createInsertSchema(students).pick({
   careerId: true,
   fileNumber: true,
   documentId: true,
+  enrollmentYear: true,
   enrollmentDate: true,
   status: true,
 });

@@ -45,6 +45,7 @@ const studentFormSchema = z.object({
   careerId: z.coerce.number().min(1, "La carrera es requerida"),
   fileNumber: z.string().min(1, "El número de legajo es requerido"),
   documentId: z.string().min(1, "El número de documento es requerido"),
+  enrollmentYear: z.coerce.number().min(2000, "El año de inscripción es requerido"),
   enrollmentDate: z.string().min(1, "La fecha de inscripción es requerida"),
   status: z.enum(["active", "inactive", "graduated"]).default("active"),
   username: z.string().min(1, "El nombre de usuario es requerido"),
@@ -82,6 +83,7 @@ export default function StudentManagement() {
       careerId: 0,
       fileNumber: "",
       documentId: "",
+      enrollmentYear: new Date().getFullYear(),
       enrollmentDate: new Date().toISOString().split('T')[0],
       status: "active",
       username: "",
@@ -332,6 +334,25 @@ export default function StudentManagement() {
                             <FormLabel>Fecha de inscripción</FormLabel>
                             <FormControl>
                               <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={studentForm.control}
+                        name="enrollmentYear"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Año de inscripción</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                placeholder="Ej: 2025" 
+                                {...field}
+                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
