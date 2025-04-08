@@ -303,6 +303,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Faltan campos requeridos" });
       }
       
+      // Verificar si el nombre de usuario ya existe
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ error: "El nombre de usuario ya está en uso" });
+      }
+      
+      // Verificar si el número de legajo ya existe
+      const students = await storage.getStudents();
+      const existingFileNumber = students.find(s => s.fileNumber === fileNumber);
+      if (existingFileNumber) {
+        return res.status(400).json({ error: "El número de legajo ya está en uso" });
+      }
+      
       // Hashear la contraseña
       const { hashPassword } = await import('./auth-utils.js');
       const hashedPassword = await hashPassword(password);
