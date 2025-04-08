@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layouts/sidebar";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import { 
   Dialog, 
   DialogContent, 
@@ -75,6 +76,7 @@ export default function StudentManagement() {
   const [openStudentDialog, setOpenStudentDialog] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Define Student form
   const studentForm = useForm<StudentFormValues>({
@@ -186,6 +188,17 @@ export default function StudentManagement() {
       default: return status;
     }
   };
+  
+  // Filter students based on search query
+  const filteredStudents = students?.filter(student => {
+    if (!searchQuery) return true;
+    
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      student.documentId.toLowerCase().includes(searchLower) ||
+      student.user.fullName.toLowerCase().includes(searchLower)
+    );
+  });
   
   return (
     <>
@@ -443,6 +456,20 @@ export default function StudentManagement() {
           </div>
         </div>
         
+        {/* Search bar */}
+        <div className="mb-4">
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <Input
+              type="search"
+              placeholder="Buscar por DNI o nombre..."
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+        
         {/* Students Table */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -474,9 +501,9 @@ export default function StudentManagement() {
                       <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
                     </tr>
                   ))
-                ) : students && students.length > 0 ? (
+                ) : filteredStudents && filteredStudents.length > 0 ? (
                   // Actual students
-                  students.map((student) => (
+                  filteredStudents.map((student) => (
                     <tr key={student.id} className="border-b border-[#e5e5ea]">
                       <td className="py-3 px-4">{student.fileNumber}</td>
                       <td className="py-3 px-4">{student.user.fullName}</td>
@@ -517,6 +544,12 @@ export default function StudentManagement() {
                       </td>
                     </tr>
                   ))
+                ) : searchQuery && students?.length > 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-[#8e8e93]">
+                      No se encontraron estudiantes con esos criterios de búsqueda.
+                    </td>
+                  </tr>
                 ) : (
                   <tr>
                     <td colSpan={8} className="py-8 text-center text-[#8e8e93]">

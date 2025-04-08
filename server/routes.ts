@@ -104,6 +104,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  app.get("/api/careers/:careerId/subjects", async (req, res) => {
+    try {
+      const careerId = parseInt(req.params.careerId);
+      const subjects = await storage.getSubjects(careerId);
+      res.json(subjects);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch subjects for career" });
+    }
+  });
+
   app.get("/api/careers/:careerId/subjects/year/:year", async (req, res) => {
     try {
       const careerId = parseInt(req.params.careerId);
