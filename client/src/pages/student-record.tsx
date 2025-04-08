@@ -114,11 +114,20 @@ export default function StudentRecord() {
     queryKey: ["/api/careers", student?.careerId, "subjects"],
     queryFn: async () => {
       if (!student?.careerId) return [];
-      const response = await fetch(`/api/careers/${student.careerId}/subjects`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch career subjects");
+      try {
+        console.log("Fetching subjects for career:", student.careerId);
+        // Usar getSubjects en lugar de la ruta específica de carrera
+        const response = await fetch(`/api/subjects?careerId=${student.careerId}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch career subjects: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        console.log("Received subjects:", data);
+        return data as Subject[];
+      } catch (error) {
+        console.error("Error fetching career subjects:", error);
+        return [];  // Retornar arreglo vacío para evitar errores en el componente
       }
-      return response.json() as Promise<Subject[]>;
     },
     enabled: !!student?.careerId
   });

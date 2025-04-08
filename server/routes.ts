@@ -92,6 +92,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  app.get("/api/subjects", async (req, res) => {
+    try {
+      // Filtrar por careerId si está presente
+      const careerId = req.query.careerId ? parseInt(req.query.careerId as string) : undefined;
+      const subjects = await storage.getSubjects(careerId);
+      
+      console.log(`Fetched ${subjects.length} subjects ${careerId ? `for career ${careerId}` : 'total'}:`, subjects);
+      
+      // Explícitamente devolver JSON con cabecera
+      res.setHeader('Content-Type', 'application/json');
+      return res.json(subjects);
+    } catch (error) {
+      console.error("Error fetching subjects:", error);
+      res.status(500).json({ error: "Failed to fetch subjects" });
+    }
+  });
+
   app.get("/api/subjects/:id", async (req, res) => {
     try {
       const subject = await storage.getSubject(parseInt(req.params.id));
@@ -106,11 +123,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/careers/:careerId/subjects", async (req, res) => {
     try {
+      if (!req.params.careerId || isNaN(parseInt(req.params.careerId))) {
+        return res.status(400).json({ error: "Invalid career ID" });
+      }
+      
       const careerId = parseInt(req.params.careerId);
+      
+      // Ensure the career exists
+      const career = await storage.getCareer(careerId);
+      if (!career) {
+        return res.status(404).json({ error: "Career not found" });
+      }
+      
       const subjects = await storage.getSubjects(careerId);
-      res.json(subjects);
+      console.log(`Fetched ${subjects.length} subjects for career ${careerId}:`, subjects);
+      
+      // Explicitly return JSON and set content type
+      res.setHeader('Content-Type', 'application/json');
+      return res.json(subjects);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch subjects for career" });
+      console.error("Error fetching subjects for career:", error);
+      return res.status(500).json({ error: "Failed to fetch subjects for career" });
     }
   });
 
