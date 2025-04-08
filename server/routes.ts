@@ -444,6 +444,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get count of subjects for a specific career
+  app.get("/api/careers/:id/subject-count", async (req, res) => {
+    try {
+      const careerId = parseInt(req.params.id);
+      const subjects = await storage.getSubjects(careerId);
+      
+      res.json({ count: subjects.length });
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener conteo de materias" });
+    }
+  });
+  
   // Create HTTP server
   const httpServer = createServer(app);
   

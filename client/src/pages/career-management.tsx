@@ -92,7 +92,39 @@ export default function CareerManagement() {
     }
   });
   
-  // Para evitar el problema con hooks
+  // Create a function to get subject count for a career
+  const getSubjectCount = async (careerId: number) => {
+    try {
+      const response = await fetch(`/api/careers/${careerId}/subject-count`);
+      if (!response.ok) {
+        return 0;
+      }
+      const data = await response.json();
+      return data.count;
+    } catch (error) {
+      return 0;
+    }
+  };
+  
+  // State to store subject counts
+  const [subjectCounts, setSubjectCounts] = useState<Record<number, number>>({});
+  
+  // Load subject counts for all careers
+  useEffect(() => {
+    const loadSubjectCounts = async () => {
+      if (careers && careers.length > 0) {
+        const counts: Record<number, number> = {};
+        
+        for (const career of careers) {
+          counts[career.id] = await getSubjectCount(career.id);
+        }
+        
+        setSubjectCounts(counts);
+      }
+    };
+    
+    loadSubjectCounts();
+  }, [careers]);
   
   // Fetch subjects for selected career and year
   const { data: subjects, isLoading: isLoadingSubjects } = useQuery({
@@ -138,12 +170,31 @@ export default function CareerManagement() {
       const res = await apiRequest("POST", "/api/subjects", data);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidar todas las consultas relacionadas con materias
+      queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      
+      // Actualizar contador de materias para esta carrera
+      setSubjectCounts(prev => ({
+        ...prev,
+        [variables.careerId]: (prev[variables.careerId] || 0) + 1
+      }));
+      
       if (selectedCareer) {
+        // Invalidar consultas específicas de esta carrera y año
+        queryClient.invalidateQueries({
+          queryKey: ["/api/careers", selectedCareer.id, "subjects"]
+        });
         queryClient.invalidateQueries({ 
           queryKey: ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear] 
         });
+        
+        // Invalidar contador de materias
+        queryClient.invalidateQueries({
+          queryKey: ["/api/careers", selectedCareer.id, "subject-count"]
+        });
       }
+      
       toast({
         title: "Materia creada",
         description: "La materia se ha creado correctamente",
@@ -166,11 +217,33 @@ export default function CareerManagement() {
       await apiRequest("DELETE", `/api/subjects/${id}`);
     },
     onSuccess: () => {
+      // Invalidar todas las consultas relacionadas con materias
+      queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      
       if (selectedCareer) {
+        // Actualizar contador de materias para esta carrera
+        setSubjectCounts(prev => ({
+          ...prev,
+          [selectedCareer.id]: Math.max(0, (prev[selectedCareer.id] || 1) - 1)
+        }));
+        
+        // Invalidar consultas específicas de esta carrera y año
+        queryClient.invalidateQueries({
+          queryKey: ["/api/careers", selectedCareer.id, "subjects"]
+        });
         queryClient.invalidateQueries({ 
           queryKey: ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear] 
         });
+        
+        // Invalidar contador de materias
+        queryClient.invalidateQueries({
+          queryKey: ["/api/careers", selectedCareer.id, "subject-count"]
+        });
       }
+      
+      // Invalidar estadísticas generales
+      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
+      
       toast({
         title: "Materia eliminada",
         description: "La materia se ha eliminado correctamente",
@@ -191,7 +264,10 @@ export default function CareerManagement() {
       await apiRequest("DELETE", `/api/careers/${id}`);
     },
     onSuccess: () => {
+      // Invalidar todas las consultas relacionadas
       queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
+      
       toast({
         title: "Carrera eliminada",
         description: "La carrera se ha eliminado correctamente",
@@ -338,7 +414,7 @@ export default function CareerManagement() {
                 <div className="p-6">
                   <h2 className="text-lg font-semibold text-[#1d1d1f]">{career.name}</h2>
                   <p className="text-[#8e8e93] mt-1">Duración: {career.durationYears} años</p>
-                  <p className="text-[#8e8e93]">0 materias</p>
+                  <p className="text-[#8e8e93]">{subjectCounts[career.id] || 0} materias</p>
                   <div className="mt-4 flex space-x-2">
                     <Button variant="outline" size="sm">
                       Editar
