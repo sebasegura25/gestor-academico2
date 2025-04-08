@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layouts/sidebar";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,19 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogFooter,
-  DialogTrigger
+  DialogTrigger,
+  DialogDescription
 } from "@/components/ui/dialog";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,6 +56,8 @@ export default function CareerManagement() {
   const [selectedYear, setSelectedYear] = useState<number>(1);
   const [openCareerDialog, setOpenCareerDialog] = useState(false);
   const [openSubjectDialog, setOpenSubjectDialog] = useState(false);
+  const [careerToDelete, setCareerToDelete] = useState<Career | null>(null);
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   
   // Define Career form
   const careerForm = useForm<CareerFormValues>({
@@ -78,6 +91,8 @@ export default function CareerManagement() {
       return response.json() as Promise<Career[]>;
     }
   });
+  
+  // Para evitar el problema con hooks
   
   // Fetch subjects for selected career and year
   const { data: subjects, isLoading: isLoadingSubjects } = useQuery({
@@ -167,6 +182,36 @@ export default function CareerManagement() {
         description: error.message,
         variant: "destructive",
       });
+    }
+  });
+  
+  // Delete career mutation
+  const deleteCareerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/careers/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      toast({
+        title: "Carrera eliminada",
+        description: "La carrera se ha eliminado correctamente",
+      });
+      
+      // Reset selection if the deleted career was selected
+      if (selectedCareer?.id === careerToDelete?.id) {
+        setSelectedCareer(null);
+      }
+      
+      setCareerToDelete(null);
+      setOpenDeleteDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error al eliminar la carrera",
+        description: error.message,
+        variant: "destructive",
+      });
+      setOpenDeleteDialog(false);
     }
   });
   
@@ -293,7 +338,7 @@ export default function CareerManagement() {
                 <div className="p-6">
                   <h2 className="text-lg font-semibold text-[#1d1d1f]">{career.name}</h2>
                   <p className="text-[#8e8e93] mt-1">Duración: {career.durationYears} años</p>
-                  <p className="text-[#8e8e93]">{Math.floor(Math.random() * 40) + 10} materias</p>
+                  <p className="text-[#8e8e93]">0 materias</p>
                   <div className="mt-4 flex space-x-2">
                     <Button variant="outline" size="sm">
                       Editar
@@ -304,6 +349,17 @@ export default function CareerManagement() {
                       onClick={() => handleCareerSelect(career)}
                     >
                       Ver plan
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="text-red-500"
+                      onClick={() => {
+                        setCareerToDelete(career);
+                        setOpenDeleteDialog(true);
+                      }}
+                    >
+                      Eliminar
                     </Button>
                   </div>
                 </div>
@@ -458,25 +514,28 @@ export default function CareerManagement() {
                             <FormField
                               control={subjectForm.control}
                               name="year"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Año</FormLabel>
-                                  <FormControl>
-                                    <Input 
-                                      type="number" 
-                                      min="1" 
-                                      max={selectedCareer.durationYears} 
-                                      value={selectedYear}
-                                      readOnly
-                                      {...field}
-                                      onChange={(e) => {
-                                        field.onChange(parseInt(e.target.value));
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
+                              render={({ field }) => {
+                                // Actualizar el valor del campo con el año seleccionado
+                                React.useEffect(() => {
+                                  field.onChange(selectedYear);
+                                }, [selectedYear]);
+                                
+                                return (
+                                  <FormItem>
+                                    <FormLabel>Año</FormLabel>
+                                    <FormControl>
+                                      <Input 
+                                        type="number" 
+                                        min="1" 
+                                        max={selectedCareer.durationYears} 
+                                        readOnly
+                                        value={selectedYear}
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                );
+                              }}
                             />
                             
                             <FormField
@@ -523,6 +582,28 @@ export default function CareerManagement() {
           </div>
         )}
       </div>
+      
+      {/* AlertDialog for career deletion confirmation */}
+      <AlertDialog open={openDeleteDialog} onOpenChange={setOpenDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar carrera?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no puede deshacerse. Se eliminará la carrera y todas sus materias.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 text-white hover:bg-red-600"
+              onClick={() => deleteCareerMutation.mutate(careerToDelete?.id!)}
+              disabled={deleteCareerMutation.isPending}
+            >
+              {deleteCareerMutation.isPending ? "Eliminando..." : "Eliminar carrera"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
