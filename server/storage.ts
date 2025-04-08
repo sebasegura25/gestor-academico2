@@ -63,6 +63,13 @@ export interface IStorage {
   getStudentSubjects(studentId: number): Promise<StudentSubject[]>;
   getStudentSubjectsWithDetails(studentId: number): Promise<any[]>;
   updateStudentSubjectStatus(id: number, status: string, date?: Date): Promise<StudentSubject>;
+  updateStudentSubject(id: number, data: {
+    status?: string;
+    grade?: number | null;
+    date?: Date | null;
+    book?: string | null;
+    folio?: string | null;
+  }): Promise<StudentSubject>;
   addStudentSubject(studentSubject: InsertStudentSubject): Promise<StudentSubject>;
   
   // Enrollments
@@ -297,14 +304,28 @@ export class DatabaseStorage implements IStorage {
     status: string,
     date: Date = new Date()
   ): Promise<StudentSubject> {
-    const updateData: any = { status };
-    
-    // Set the appropriate date fields based on status
-    if (status === "regular") {
-      updateData.regularizedDate = date;
-    } else if (status === "acreditada") {
-      updateData.accreditedDate = date;
+    // Esta función se mantiene por compatibilidad con código existente
+    return this.updateStudentSubject(id, { status, date });
+  }
+  
+  async updateStudentSubject(
+    id: number,
+    data: {
+      status?: string;
+      grade?: number | null;
+      date?: Date | null;
+      book?: string | null;
+      folio?: string | null;
     }
+  ): Promise<StudentSubject> {
+    const updateData: any = {};
+    
+    // Copiar solo los campos que están definidos
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.grade !== undefined) updateData.grade = data.grade;
+    if (data.date !== undefined) updateData.date = data.date;
+    if (data.book !== undefined) updateData.book = data.book;
+    if (data.folio !== undefined) updateData.folio = data.folio;
     
     const [studentSubject] = await db
       .update(studentSubjects)

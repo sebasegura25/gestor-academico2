@@ -218,6 +218,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  app.get("/api/students/with-details", async (req, res) => {
+    try {
+      const students = await storage.getStudents();
+      
+      // Get full user and career details for each student
+      const fullStudents = await Promise.all(
+        students.map(async (student) => {
+          const user = await storage.getUser(student.userId);
+          const career = await storage.getCareer(student.careerId);
+          return {
+            ...student,
+            user: {
+              id: user?.id,
+              username: user?.username,
+              fullName: user?.fullName,
+              email: user?.email,
+              role: user?.role
+            },
+            career: {
+              id: career?.id,
+              name: career?.name
+            }
+          };
+        })
+      );
+      
+      res.json(fullStudents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch students with details" });
+    }
+  });
+  
   app.get("/api/students/:id", async (req, res) => {
     try {
       const student = await storage.getStudent(parseInt(req.params.id));
@@ -310,23 +342,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.put("/api/student-subjects/:id/status", async (req, res) => {
+  app.patch("/api/student-subjects/:id", async (req, res) => {
     try {
-      const { status, date } = req.body;
+      const { status, grade, date, book, folio } = req.body;
       
-      if (!["cursando", "regular", "acreditada", "libre"].includes(status)) {
+      if (status && !["cursando", "acreditada", "libre"].includes(status)) {
         return res.status(400).json({ error: "Invalid status value" });
       }
       
-      const studentSubject = await storage.updateStudentSubjectStatus(
+      // Validar campos requeridos para estado acreditada
+      if (status === "acreditada" && !grade) {
+        return res.status(400).json({ error: "Grade is required for accredited subjects" });
+      }
+      
+      // Actualizar el estado y datos adicionales
+      const studentSubject = await storage.updateStudentSubject(
         parseInt(req.params.id),
-        status,
-        date ? new Date(date) : undefined
+        {
+          status,
+          grade: grade ? parseInt(grade) : null,
+          date: date ? new Date(date) : null,
+          book,
+          folio
+        }
       );
       
       res.json(studentSubject);
     } catch (error) {
-      res.status(500).json({ error: "Failed to update student subject status" });
+      res.status(500).json({ error: "Failed to update student subject" });
     }
   });
   
@@ -394,8 +437,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           subjectId: validatedData.subjectId,
           status: "cursando",
           grade: null,
-          regularizedDate: null,
-          accreditedDate: null
+          date: null,
+          book: null,
+          folio: null
         });
       }
       

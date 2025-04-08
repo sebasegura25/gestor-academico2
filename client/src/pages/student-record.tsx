@@ -1,14 +1,35 @@
-import { useEffect, useState } from "react";
-import { useParams } from "wouter";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layouts/sidebar";
-import { useQuery } from "@tanstack/react-query";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Career, Student, StudentSubject } from "@shared/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Career, Student, Subject, StudentSubject } from "@shared/schema";
+import { useRoute, Link } from "wouter";
 
+// Define our types
 type StudentRecord = Student & {
   user: {
     id: number;
@@ -30,26 +51,52 @@ type SubjectWithDetails = StudentSubject & {
   };
 };
 
+// Define StudentSubject update schema
+const studentSubjectSchema = z.object({
+  id: z.coerce.number().optional(),
+  studentId: z.coerce.number(),
+  subjectId: z.coerce.number(),
+  status: z.enum(["cursando", "acreditada", "libre"]),
+  grade: z.coerce.number().min(4, "La nota debe ser al menos 4").max(10, "La nota máxima es 10").optional(),
+  date: z.string().optional(),
+  book: z.string().optional(),
+  folio: z.string().optional()
+});
+
+type StudentSubjectFormValues = z.infer<typeof studentSubjectSchema>;
+
 export default function StudentRecord() {
-  const { id } = useParams<{ id: string }>();
-  const studentId = parseInt(id);
+  const { toast } = useToast();
+  const [, params] = useRoute('/student-record/:id');
+  const studentId = params?.id ? parseInt(params.id) : 0;
   const [selectedYear, setSelectedYear] = useState<number>(1);
-  const [selectedCareer, setSelectedCareer] = useState<number | null>(null);
+  const [openSubjectDialog, setOpenSubjectDialog] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState<SubjectWithDetails | null>(null);
   
-  // Fetch student record
-  const { data: studentRecord, isLoading: isLoadingStudent } = useQuery({
+  // Define StudentSubject form
+  const subjectForm = useForm<StudentSubjectFormValues>({
+    resolver: zodResolver(studentSubjectSchema),
+    defaultValues: {
+      studentId: studentId,
+      subjectId: 0,
+      status: "libre"
+    }
+  });
+  
+  // Fetch student details
+  const { data: student, isLoading: isLoadingStudent } = useQuery({
     queryKey: ["/api/students", studentId],
     queryFn: async () => {
       const response = await fetch(`/api/students/${studentId}`);
       if (!response.ok) {
-        throw new Error("Failed to fetch student record");
+        throw new Error("Failed to fetch student");
       }
       return response.json() as Promise<StudentRecord>;
     },
-    enabled: !isNaN(studentId)
+    enabled: !!studentId
   });
   
-  // Fetch student subjects
+  // Fetch student's subjects with details
   const { data: studentSubjects, isLoading: isLoadingSubjects } = useQuery({
     queryKey: ["/api/students", studentId, "subjects"],
     queryFn: async () => {
@@ -59,56 +106,147 @@ export default function StudentRecord() {
       }
       return response.json() as Promise<SubjectWithDetails[]>;
     },
-    enabled: !isNaN(studentId)
+    enabled: !!studentId
   });
   
-  // Set initial selected career from student record
-  useEffect(() => {
-    if (studentRecord && studentRecord.career) {
-      setSelectedCareer(studentRecord.career.id);
+  // Fetch all subjects for this career (to find ones the student hasn't enrolled in yet)
+  const { data: careerSubjects, isLoading: isLoadingCareerSubjects } = useQuery({
+    queryKey: ["/api/careers", student?.careerId, "subjects"],
+    queryFn: async () => {
+      if (!student?.careerId) return [];
+      const response = await fetch(`/api/careers/${student.careerId}/subjects`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch career subjects");
+      }
+      return response.json() as Promise<Subject[]>;
+    },
+    enabled: !!student?.careerId
+  });
+  
+  // Get subjects for selected year
+  const filteredSubjects = studentSubjects?.filter(
+    (ss) => ss.subject.year === selectedYear
+  ) || [];
+  
+  // Update or create student subject status mutation
+  const updateSubjectStatusMutation = useMutation({
+    mutationFn: async (data: StudentSubjectFormValues) => {
+      // If this is an update (we have an ID)
+      if (data.id) {
+        const res = await apiRequest("PATCH", `/api/student-subjects/${data.id}`, data);
+        return await res.json();
+      } 
+      // This is a new enrollment
+      else {
+        const res = await apiRequest("POST", "/api/student-subjects", data);
+        return await res.json();
+      }
+    },
+    onSuccess: () => {
+      // Invalidate relevant queries
+      queryClient.invalidateQueries({ queryKey: ["/api/students", studentId, "subjects"] });
+      
+      toast({
+        title: "Estado de materia actualizado",
+        description: "El estado de la materia se ha actualizado correctamente",
+      });
+      setOpenSubjectDialog(false);
+      setSelectedSubject(null);
+      subjectForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error al actualizar el estado de la materia",
+        description: error.message,
+        variant: "destructive",
+      });
     }
-  }, [studentRecord]);
+  });
   
-  // Calculate academic progress
-  const calculateProgress = () => {
-    if (!studentSubjects) return { approved: 0, total: 0, percentage: 0, average: 0 };
-    
-    const approved = studentSubjects.filter(ss => ss.status === "acreditada").length;
-    const total = 40; // Assumed total subjects required
-    const percentage = Math.round((approved / total) * 100);
-    
-    // Calculate average grade from approved subjects
-    const gradesSum = studentSubjects
-      .filter(ss => ss.status === "acreditada" && ss.grade)
-      .reduce((sum, ss) => sum + (ss.grade || 0), 0);
-    
-    const gradesCount = studentSubjects
-      .filter(ss => ss.status === "acreditada" && ss.grade)
-      .length;
-    
-    const average = gradesCount > 0 ? parseFloat((gradesSum / gradesCount).toFixed(1)) : 0;
-    
-    return { approved, total, percentage, average };
+  // Handle form submission
+  const onSubjectSubmit = (data: StudentSubjectFormValues) => {
+    updateSubjectStatusMutation.mutate(data);
   };
   
-  // Get subjects for current year
-  const getSubjectsForYear = (year: number) => {
-    if (!studentSubjects) return [];
-    return studentSubjects.filter(ss => ss.subject.year === year);
+  // Effect to reset form when we select a different subject
+  useEffect(() => {
+    if (selectedSubject) {
+      subjectForm.reset({
+        id: selectedSubject.id,
+        studentId: selectedSubject.studentId,
+        subjectId: selectedSubject.subjectId,
+        status: selectedSubject.status as any,
+        grade: selectedSubject.grade ? (selectedSubject.grade as number) : undefined, // Fix type issue
+        date: selectedSubject.date ? new Date(selectedSubject.date).toISOString().split('T')[0] : undefined,
+        book: selectedSubject.book || undefined,
+        folio: selectedSubject.folio || undefined
+      });
+    } else {
+      subjectForm.reset({
+        studentId: studentId,
+        subjectId: 0,
+        status: "libre"
+      });
+    }
+  }, [selectedSubject, studentId]);
+  
+  // Get status text and style in Spanish
+  const getStatusDetails = (status: string) => {
+    switch (status) {
+      case "cursando": 
+        return { 
+          text: "Cursando", 
+          bgColor: "bg-yellow-100", 
+          textColor: "text-yellow-800" 
+        };
+      case "acreditada": 
+        return { 
+          text: "Acreditada", 
+          bgColor: "bg-green-100", 
+          textColor: "text-green-800" 
+        };
+      case "libre": 
+        return { 
+          text: "Libre", 
+          bgColor: "bg-gray-100", 
+          textColor: "text-gray-800" 
+        };
+      default: 
+        return { 
+          text: status, 
+          bgColor: "bg-gray-100", 
+          textColor: "text-gray-800" 
+        };
+    }
   };
   
-  // Calculate expiry date for Regular status (2 years from regularization date)
-  const calculateExpiryDate = (regularizedDate: Date | null) => {
-    if (!regularizedDate) return "";
+  // Get available subjects that student hasn't enrolled in yet
+  const getAvailableSubjects = () => {
+    if (!careerSubjects || !studentSubjects) return [];
     
-    const date = new Date(regularizedDate);
-    date.setFullYear(date.getFullYear() + 2);
+    // Get IDs of subjects student is already enrolled in
+    const enrolledSubjectIds = new Set(studentSubjects.map(ss => ss.subjectId));
     
-    return date.toLocaleDateString();
+    // Filter out subjects already enrolled
+    return careerSubjects.filter(subject => !enrolledSubjectIds.has(subject.id));
   };
   
-  const progress = calculateProgress();
-  const currentYearSubjects = getSubjectsForYear(selectedYear);
+  if (!studentId) {
+    return (
+      <>
+        <Sidebar />
+        <div className="md:ml-64 p-6">
+          <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+            <h2 className="text-xl font-semibold text-[#1d1d1f] mb-4">No se encontró el estudiante</h2>
+            <p className="text-[#8e8e93] mb-6">No se ha proporcionado un ID de estudiante válido.</p>
+            <Link to="/student-management">
+              <Button>Volver a la lista de estudiantes</Button>
+            </Link>
+          </div>
+        </div>
+      </>
+    );
+  }
   
   return (
     <>
@@ -117,182 +255,376 @@ export default function StudentRecord() {
       <div className="md:ml-64 p-6">
         <div className="mb-6 flex justify-between items-center">
           <div>
+            <Link to="/student-management" className="text-sm text-[#0070f3] hover:underline mb-2 inline-flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Volver a la lista de estudiantes
+            </Link>
             <h1 className="text-2xl font-semibold text-[#1d1d1f]">Legajo Estudiantil</h1>
-            <p className="text-[#8e8e93]">Información académica completa</p>
+            <p className="text-[#8e8e93]">Seguimiento académico y estado de materias</p>
           </div>
           
-          <div className="flex space-x-2">
-            <Select defaultValue={selectedCareer?.toString()} disabled>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Seleccionar carrera" />
-              </SelectTrigger>
-              <SelectContent>
-                {studentRecord && (
-                  <SelectItem value={studentRecord.career.id.toString()}>
-                    {studentRecord.career.name}
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            
-            <Button className="bg-[#0070f3] hover:bg-blue-600">
-              Imprimir
-            </Button>
-          </div>
+          <Button 
+            variant="outline"
+            onClick={() => {
+              // Refrescar todas las consultas relacionadas
+              queryClient.invalidateQueries({ queryKey: ["/api/students", studentId] });
+              queryClient.invalidateQueries({ queryKey: ["/api/students", studentId, "subjects"] });
+              
+              toast({
+                title: "Datos actualizados",
+                description: "El legajo se ha actualizado correctamente",
+              });
+            }}
+            className="flex items-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Actualizar legajo
+          </Button>
         </div>
         
         {/* Student Info Card */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          {isLoadingStudent ? (
-            <div className="flex flex-col md:flex-row justify-between">
-              <div className="space-y-2">
-                <Skeleton className="h-7 w-48 mb-1" />
-                <Skeleton className="h-5 w-64" />
-                <Skeleton className="h-5 w-80" />
-              </div>
-              
-              <div className="mt-4 md:mt-0 space-y-2">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-5 w-40 mt-2" />
-              </div>
-            </div>
-          ) : studentRecord ? (
-            <div className="flex flex-col md:flex-row justify-between">
+        {isLoadingStudent ? (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-[#1d1d1f]">{studentRecord.user.fullName}</h2>
-                <p className="text-[#8e8e93]">DNI: {studentRecord.documentId} | Legajo: {studentRecord.fileNumber}</p>
-                <p className="text-[#8e8e93]">Correo: {studentRecord.user.email}</p>
+                <Skeleton className="h-5 w-32 mb-2" />
+                <Skeleton className="h-7 w-48" />
               </div>
-              
-              <div className="mt-4 md:mt-0">
-                <div className="text-sm text-[#8e8e93] mb-1">Estado académico</div>
-                <StatusBadge variant="regular" label="Regular" />
-                <div className="text-[#8e8e93] text-sm mt-2">Año de ingreso: {studentRecord.enrollmentYear}</div>
+              <div>
+                <Skeleton className="h-5 w-32 mb-2" />
+                <Skeleton className="h-7 w-48" />
               </div>
-            </div>
-          ) : (
-            <div className="text-center py-4 text-[#8e8e93]">
-              No se encontró información del estudiante
-            </div>
-          )}
-        </div>
-        
-        {/* Academic Progress */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">Progreso Académico</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-[#f5f5f7] rounded-lg p-4">
-              <div className="text-sm text-[#8e8e93] mb-1">Materias aprobadas</div>
-              <div className="text-xl font-semibold text-[#1d1d1f]">{progress.approved} / {progress.total}</div>
-              <div className="w-full bg-[#e5e5ea] rounded-full h-2.5 mt-2">
-                <div 
-                  className="bg-[#34c759] h-2.5 rounded-full" 
-                  style={{ width: `${progress.percentage}%` }}
-                ></div>
-              </div>
-            </div>
-            
-            <div className="bg-[#f5f5f7] rounded-lg p-4">
-              <div className="text-sm text-[#8e8e93] mb-1">Promedio general</div>
-              <div className="text-xl font-semibold text-[#1d1d1f]">{progress.average}</div>
-              <div className="w-full bg-[#e5e5ea] rounded-full h-2.5 mt-2">
-                <div 
-                  className="bg-[#0070f3] h-2.5 rounded-full" 
-                  style={{ width: `${progress.average * 10}%` }}
-                ></div>
+              <div>
+                <Skeleton className="h-5 w-32 mb-2" />
+                <Skeleton className="h-7 w-48" />
               </div>
             </div>
           </div>
-        </div>
+        ) : student ? (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <p className="text-sm font-medium text-[#8e8e93]">Información personal</p>
+                <h2 className="text-xl font-semibold text-[#1d1d1f]">{student.user.fullName}</h2>
+                <p className="text-[#3a3a3c]">{student.user.email}</p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-[#8e8e93]">Información académica</p>
+                <h3 className="text-lg font-medium text-[#1d1d1f]">{student.career.name}</h3>
+                <p className="text-[#3a3a3c]">Legajo: {student.fileNumber}</p>
+                <p className="text-[#3a3a3c]">
+                  Inscripción: {new Date(student.enrollmentDate).toLocaleDateString()}
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-[#8e8e93]">Estado</p>
+                <div className="mt-2">
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm ${
+                    student.status === 'active' ? 'bg-green-100 text-green-800' : 
+                    student.status === 'graduated' ? 'bg-blue-100 text-blue-800' : 
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {student.status === 'active' ? 'Activo' : 
+                     student.status === 'graduated' ? 'Graduado' : 
+                     student.status === 'inactive' ? 'Inactivo' : student.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+            <h2 className="text-xl font-semibold text-[#1d1d1f] mb-4">No se encontró el estudiante</h2>
+            <p className="text-[#8e8e93] mb-6">
+              El estudiante con ID {studentId} no existe o ha sido eliminado.
+            </p>
+            <Link to="/student-management">
+              <Button>Volver a la lista de estudiantes</Button>
+            </Link>
+          </div>
+        )}
         
-        {/* Subjects List */}
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">Historial de Materias</h2>
-          
-          {/* Year Tabs */}
-          <Tabs 
-            defaultValue="1" 
-            value={selectedYear.toString()}
-            onValueChange={(value) => setSelectedYear(parseInt(value))}
-            className="mb-6"
-          >
-            <TabsList className="border-b border-[#e5e5ea] mb-6">
-              <div className="flex">
-                {studentRecord && Array.from({ length: studentRecord.career.durationYears }, (_, i) => i + 1).map((year) => (
-                  <TabsTrigger key={year} value={year.toString()} className="px-4 py-2">
+        {/* Academic Record Tabs - Show only if student exists */}
+        {student && (
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="mb-6 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-[#1d1d1f]">
+                Historial Académico
+              </h2>
+              
+              <Dialog open={openSubjectDialog} onOpenChange={setOpenSubjectDialog}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Agregar materia
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>
+                      {selectedSubject ? "Actualizar Estado de Materia" : "Agregar Nueva Materia"}
+                    </DialogTitle>
+                  </DialogHeader>
+                  
+                  <Form {...subjectForm}>
+                    <form onSubmit={subjectForm.handleSubmit(onSubjectSubmit)} className="space-y-4">
+                      {!selectedSubject && (
+                        <FormField
+                          control={subjectForm.control}
+                          name="subjectId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Materia</FormLabel>
+                              <Select 
+                                onValueChange={(value) => field.onChange(parseInt(value))}
+                                defaultValue={field.value.toString()}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Selecciona una materia" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {getAvailableSubjects().map((subject) => (
+                                    <SelectItem key={subject.id} value={subject.id.toString()}>
+                                      {subject.code} - {subject.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                      
+                      <FormField
+                        control={subjectForm.control}
+                        name="status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estado</FormLabel>
+                            <Select 
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecciona un estado" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="libre">Libre</SelectItem>
+                                <SelectItem value="cursando">Cursando</SelectItem>
+                                <SelectItem value="acreditada">Acreditada</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      {subjectForm.watch("status") === "acreditada" && (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField
+                              control={subjectForm.control}
+                              name="grade"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Nota</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      min="4" 
+                                      max="10" 
+                                      step="1"
+                                      {...field}
+                                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            
+                            <FormField
+                              control={subjectForm.control}
+                              name="date"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Fecha</FormLabel>
+                                  <FormControl>
+                                    <Input type="date" {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField
+                              control={subjectForm.control}
+                              name="book"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Libro</FormLabel>
+                                  <FormControl>
+                                    <Input {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            
+                            <FormField
+                              control={subjectForm.control}
+                              name="folio"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Folio</FormLabel>
+                                  <FormControl>
+                                    <Input {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        </>
+                      )}
+                      
+                      <DialogFooter className="mt-6">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => {
+                            setOpenSubjectDialog(false);
+                            setSelectedSubject(null);
+                            subjectForm.reset();
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button 
+                          type="submit" 
+                          className="bg-[#0070f3] hover:bg-blue-600"
+                          disabled={updateSubjectStatusMutation.isPending}
+                        >
+                          {updateSubjectStatusMutation.isPending ? "Guardando..." : "Guardar estado"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
+            </div>
+            
+            {/* Year Tabs */}
+            <Tabs 
+              defaultValue="1" 
+              value={selectedYear.toString()}
+              onValueChange={(value) => setSelectedYear(parseInt(value))}
+              className="mb-6"
+            >
+              <TabsList className="mb-4 flex overflow-x-auto">
+                {Array.from({ length: student.career.durationYears }, (_, i) => i + 1).map((year) => (
+                  <TabsTrigger key={year} value={year.toString()} className="px-4 py-2 whitespace-nowrap">
                     {year}° Año
                   </TabsTrigger>
                 ))}
-              </div>
-            </TabsList>
-            
-            {studentRecord && Array.from({ length: studentRecord.career.durationYears }, (_, i) => i + 1).map((year) => (
-              <TabsContent key={year} value={year.toString()}>
-                {/* Subjects Table */}
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
-                        <th className="py-3 px-4 font-medium rounded-l-lg">Código</th>
-                        <th className="py-3 px-4 font-medium">Materia</th>
-                        <th className="py-3 px-4 font-medium">Estado</th>
-                        <th className="py-3 px-4 font-medium">Calificación</th>
-                        <th className="py-3 px-4 font-medium rounded-r-lg">Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-[#3a3a3c]">
-                      {isLoadingSubjects ? (
-                        // Skeleton loaders
-                        Array(5).fill(0).map((_, i) => (
-                          <tr key={i} className="border-b border-[#e5e5ea]">
-                            <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
-                            <td className="py-3 px-4"><Skeleton className="h-4 w-40" /></td>
-                            <td className="py-3 px-4"><Skeleton className="h-6 w-24" /></td>
-                            <td className="py-3 px-4"><Skeleton className="h-4 w-8" /></td>
-                            <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
-                          </tr>
-                        ))
-                      ) : currentYearSubjects.length > 0 ? (
-                        // Actual subjects
-                        currentYearSubjects.map((subjectData) => (
-                          <tr key={subjectData.id} className="border-b border-[#e5e5ea]">
-                            <td className="py-3 px-4">{subjectData.subject.code}</td>
-                            <td className="py-3 px-4">{subjectData.subject.name}</td>
-                            <td className="py-3 px-4">
-                              <StatusBadge variant={subjectData.status as any} />
-                            </td>
-                            <td className="py-3 px-4">{subjectData.grade || "-"}</td>
-                            <td className="py-3 px-4">
-                              {subjectData.status === "acreditada" && subjectData.accreditedDate
-                                ? new Date(subjectData.accreditedDate).toLocaleDateString()
-                                : subjectData.status === "regular" && subjectData.regularizedDate
-                                  ? (
-                                    <span className="text-[#ffcc00] text-sm">
-                                      Vence: {calculateExpiryDate(subjectData.regularizedDate)}
-                                    </span>
-                                  )
-                                : subjectData.status === "cursando"
-                                  ? "En curso"
-                                  : "-"}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="py-6 text-center text-[#8e8e93]">
-                            No hay materias registradas para este año.
-                          </td>
+              </TabsList>
+              
+              {Array.from({ length: student.career.durationYears }, (_, i) => i + 1).map((year) => (
+                <TabsContent key={year} value={year.toString()}>
+                  {/* Subjects Table */}
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full">
+                      <thead>
+                        <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
+                          <th className="py-3 px-4 font-medium rounded-l-lg">Código</th>
+                          <th className="py-3 px-4 font-medium">Materia</th>
+                          <th className="py-3 px-4 font-medium">Estado</th>
+                          <th className="py-3 px-4 font-medium">Nota</th>
+                          <th className="py-3 px-4 font-medium">Fecha</th>
+                          <th className="py-3 px-4 font-medium">Libro</th>
+                          <th className="py-3 px-4 font-medium">Folio</th>
+                          <th className="py-3 px-4 font-medium rounded-r-lg">Acciones</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </div>
+                      </thead>
+                      <tbody className="text-[#3a3a3c]">
+                        {isLoadingSubjects ? (
+                          // Skeleton loaders
+                          Array(3).fill(0).map((_, i) => (
+                            <tr key={i} className="border-b border-[#e5e5ea]">
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-40" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-12" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
+                              <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+                            </tr>
+                          ))
+                        ) : filteredSubjects && filteredSubjects.length > 0 ? (
+                          // Actual subjects
+                          filteredSubjects.map((ss) => {
+                            const status = getStatusDetails(ss.status);
+                            return (
+                              <tr key={ss.id} className="border-b border-[#e5e5ea]">
+                                <td className="py-3 px-4">{ss.subject.code}</td>
+                                <td className="py-3 px-4">{ss.subject.name}</td>
+                                <td className="py-3 px-4">
+                                  <span className={`inline-block px-2 py-1 rounded-full text-xs ${status.bgColor} ${status.textColor}`}>
+                                    {status.text}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">{ss.grade || "-"}</td>
+                                <td className="py-3 px-4">
+                                  {ss.date ? new Date(ss.date).toLocaleDateString() : "-"}
+                                </td>
+                                <td className="py-3 px-4">{ss.book || "-"}</td>
+                                <td className="py-3 px-4">{ss.folio || "-"}</td>
+                                <td className="py-3 px-4">
+                                  <Button 
+                                    variant="link" 
+                                    className="text-[#0070f3] text-sm p-0 h-auto"
+                                    onClick={() => {
+                                      setSelectedSubject(ss);
+                                      setOpenSubjectDialog(true);
+                                    }}
+                                  >
+                                    Actualizar
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={8} className="py-6 text-center text-[#8e8e93]">
+                              No hay materias asignadas para este año. Agrega materias usando el botón "Agregar materia".
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </div>
+        )}
       </div>
     </>
   );

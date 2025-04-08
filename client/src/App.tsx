@@ -4,6 +4,7 @@ import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home-page";
 import AuthPage from "@/pages/auth-page";
 import CareerManagement from "@/pages/career-management";
+import StudentManagement from "@/pages/student-management";
 import StudentRecord from "@/pages/student-record";
 import EnrollmentForm from "@/pages/enrollment-form";
 import { AuthProvider } from "@/hooks/use-auth";
@@ -14,7 +15,8 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/" component={HomePage} />
       <Route path="/careers" component={CareerManagement} />
-      <Route path="/students/:id" component={StudentRecord} />
+      <Route path="/students" component={StudentManagement} />
+      <Route path="/student-record/:id" component={StudentRecord} />
       <Route path="/enrollments" component={EnrollmentForm} />
       <Route component={NotFound} />
     </Switch>

@@ -44,9 +44,9 @@ export const students = pgTable("students", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().unique(),
   careerId: integer("career_id").notNull(),
-  documentId: text("document_id").notNull(),
   fileNumber: text("file_number").notNull().unique(),
-  enrollmentYear: integer("enrollment_year").notNull(),
+  enrollmentDate: timestamp("enrollment_date").notNull(),
+  status: text("status").notNull().default("active"), // "active", "inactive", "graduated"
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -55,10 +55,11 @@ export const studentSubjects = pgTable("student_subjects", {
   id: serial("id").primaryKey(),
   studentId: integer("student_id").notNull(),
   subjectId: integer("subject_id").notNull(),
-  status: text("status").notNull(), // "cursando", "regular", "acreditada", "libre"
+  status: text("status").notNull(), // "cursando", "acreditada", "libre"
   grade: integer("grade"),
-  regularizedDate: timestamp("regularized_date"),
-  accreditedDate: timestamp("accredited_date"),
+  date: timestamp("date"), // Fecha de acreditación
+  book: text("book"), // Libro donde está registrada la nota
+  folio: text("folio"), // Folio donde está registrada la nota
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -102,9 +103,9 @@ export const insertRequirementSchema = createInsertSchema(requirements).pick({
 export const insertStudentSchema = createInsertSchema(students).pick({
   userId: true,
   careerId: true,
-  documentId: true,
   fileNumber: true,
-  enrollmentYear: true,
+  enrollmentDate: true,
+  status: true,
 });
 
 export const insertStudentSubjectSchema = createInsertSchema(studentSubjects).pick({
@@ -112,8 +113,9 @@ export const insertStudentSubjectSchema = createInsertSchema(studentSubjects).pi
   subjectId: true,
   status: true,
   grade: true,
-  regularizedDate: true,
-  accreditedDate: true,
+  date: true,
+  book: true,
+  folio: true,
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({

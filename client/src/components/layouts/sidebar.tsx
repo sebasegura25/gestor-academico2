@@ -17,7 +17,7 @@ import { useMediaQuery } from "@/hooks/use-mobile";
 const navItems = [
   { path: "/", label: "Dashboard", icon: HomeIcon },
   { path: "/careers", label: "Carreras", icon: BookIcon },
-  { path: "/students/1", label: "Legajos", icon: UserIcon },
+  { path: "/students", label: "Legajos", icon: UserIcon },
   { path: "/enrollments", label: "Inscripciones", icon: CalendarPlusIcon },
 ];
 
