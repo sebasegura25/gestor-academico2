@@ -471,22 +471,20 @@ export default function CareerManagement() {
                 <div className="p-6">
                   <h2 className="text-lg font-semibold text-[#1d1d1f]">{career.name}</h2>
                   <p className="text-[#8e8e93] mt-1">Duración: {career.durationYears} años</p>
-                  <p className="text-[#8e8e93]">{subjectCounts[career.id] || 0} materias</p>
-                  <div className="mt-4 flex space-x-2">
-                    <Button variant="outline" size="sm">
-                      Editar
-                    </Button>
+                  <p className="text-[#8e8e93] mb-4">{subjectCounts[career.id] || 0} materias</p>
+                  <div className="flex justify-center space-x-4">
                     <Button 
                       variant="outline" 
                       size="sm"
                       onClick={() => handleCareerSelect(career)}
+                      className="px-4"
                     >
                       Ver plan
                     </Button>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      className="text-red-500"
+                      className="text-red-500 px-4"
                       onClick={() => {
                         setCareerToDelete(career);
                         setOpenDeleteDialog(true);
