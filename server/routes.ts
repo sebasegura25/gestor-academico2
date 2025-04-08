@@ -296,10 +296,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/students", async (req, res) => {
     try {
       // Extraer los datos del usuario
-      const { username, password, fullName, email, careerId, fileNumber, enrollmentDate, status } = req.body;
+      const { username, password, fullName, email, careerId, fileNumber, documentId, enrollmentDate, status } = req.body;
       
       // Validar que se proporcionan los campos necesarios
-      if (!username || !password || !fullName || !email || !careerId || !fileNumber || !enrollmentDate) {
+      if (!username || !password || !fullName || !email || !careerId || !fileNumber || !documentId || !enrollmentDate) {
         return res.status(400).json({ error: "Faltan campos requeridos" });
       }
       
@@ -334,6 +334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: user.id,
         careerId: parseInt(careerId),
         fileNumber,
+        documentId,
         enrollmentDate: new Date(enrollmentDate),
         status: status || "active"
       };

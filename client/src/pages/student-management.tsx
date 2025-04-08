@@ -44,6 +44,7 @@ const studentFormSchema = z.object({
   userId: z.coerce.number().optional(),
   careerId: z.coerce.number().min(1, "La carrera es requerida"),
   fileNumber: z.string().min(1, "El número de legajo es requerido"),
+  documentId: z.string().min(1, "El número de documento es requerido"),
   enrollmentDate: z.string().min(1, "La fecha de inscripción es requerida"),
   status: z.enum(["active", "inactive", "graduated"]).default("active"),
   username: z.string().min(1, "El nombre de usuario es requerido"),
@@ -80,6 +81,7 @@ export default function StudentManagement() {
     defaultValues: {
       careerId: 0,
       fileNumber: "",
+      documentId: "",
       enrollmentDate: new Date().toISOString().split('T')[0],
       status: "active",
       username: "",
@@ -308,6 +310,22 @@ export default function StudentManagement() {
                       
                       <FormField
                         control={studentForm.control}
+                        name="documentId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Número de documento</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ej: 12345678" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={studentForm.control}
                         name="enrollmentDate"
                         render={({ field }) => (
                           <FormItem>
@@ -404,6 +422,7 @@ export default function StudentManagement() {
                 <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
                   <th className="py-3 px-4 font-medium">Legajo</th>
                   <th className="py-3 px-4 font-medium">Nombre</th>
+                  <th className="py-3 px-4 font-medium">DNI</th>
                   <th className="py-3 px-4 font-medium">Email</th>
                   <th className="py-3 px-4 font-medium">Carrera</th>
                   <th className="py-3 px-4 font-medium">Estado</th>
@@ -418,6 +437,7 @@ export default function StudentManagement() {
                     <tr key={i} className="border-b border-[#e5e5ea]">
                       <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
                       <td className="py-3 px-4"><Skeleton className="h-4 w-40" /></td>
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
                       <td className="py-3 px-4"><Skeleton className="h-4 w-40" /></td>
                       <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
                       <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
@@ -431,6 +451,7 @@ export default function StudentManagement() {
                     <tr key={student.id} className="border-b border-[#e5e5ea]">
                       <td className="py-3 px-4">{student.fileNumber}</td>
                       <td className="py-3 px-4">{student.user.fullName}</td>
+                      <td className="py-3 px-4">{student.documentId}</td>
                       <td className="py-3 px-4">{student.user.email}</td>
                       <td className="py-3 px-4">{student.career.name}</td>
                       <td className="py-3 px-4">
@@ -469,7 +490,7 @@ export default function StudentManagement() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-[#8e8e93]">
+                    <td colSpan={8} className="py-8 text-center text-[#8e8e93]">
                       No hay estudiantes registrados. Crea un nuevo estudiante para comenzar.
                     </td>
                   </tr>
