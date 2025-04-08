@@ -146,8 +146,17 @@ export default function CareerManagement() {
       const res = await apiRequest("POST", "/api/careers", data);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (newCareer) => {
+      // Actualizar la caché de React Query
       queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
+      
+      // Agregar la nueva carrera a los contadores de materias
+      setSubjectCounts(prev => ({
+        ...prev,
+        [newCareer.id]: 0
+      }));
+
       toast({
         title: "Carrera creada",
         description: "La carrera se ha creado correctamente",
@@ -170,9 +179,10 @@ export default function CareerManagement() {
       const res = await apiRequest("POST", "/api/subjects", data);
       return await res.json();
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (newSubject, variables) => {
       // Invalidar todas las consultas relacionadas con materias
       queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
       
       // Actualizar contador de materias para esta carrera
       setSubjectCounts(prev => ({
@@ -181,15 +191,24 @@ export default function CareerManagement() {
       }));
       
       if (selectedCareer) {
-        // Invalidar consultas específicas de esta carrera y año
+        // Actualizar la caché de materias directamente para el año actual
+        if (variables.year === selectedYear) {
+          // Obtener los datos actuales de la caché
+          const currentSubjectsData = queryClient.getQueryData<Subject[]>(
+            ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear]
+          ) || [];
+          
+          // Agregar la nueva materia a la caché
+          queryClient.setQueryData(
+            ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear],
+            [...currentSubjectsData, newSubject]
+          );
+        }
+        
+        // Invalidar otras consultas relacionadas
         queryClient.invalidateQueries({
           queryKey: ["/api/careers", selectedCareer.id, "subjects"]
         });
-        queryClient.invalidateQueries({ 
-          queryKey: ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear] 
-        });
-        
-        // Invalidar contador de materias
         queryClient.invalidateQueries({
           queryKey: ["/api/careers", selectedCareer.id, "subject-count"]
         });
@@ -215,10 +234,12 @@ export default function CareerManagement() {
   const deleteSubjectMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/subjects/${id}`);
+      return id; // Devolvemos el ID para usarlo en onSuccess
     },
-    onSuccess: () => {
+    onSuccess: (deletedId) => {
       // Invalidar todas las consultas relacionadas con materias
       queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
       
       if (selectedCareer) {
         // Actualizar contador de materias para esta carrera
@@ -227,22 +248,27 @@ export default function CareerManagement() {
           [selectedCareer.id]: Math.max(0, (prev[selectedCareer.id] || 1) - 1)
         }));
         
-        // Invalidar consultas específicas de esta carrera y año
+        // Actualizar la caché de materias directamente para el año actual
+        const currentSubjectsData = queryClient.getQueryData<Subject[]>(
+          ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear]
+        );
+        
+        if (currentSubjectsData) {
+          // Eliminar la materia de la caché
+          queryClient.setQueryData(
+            ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear],
+            currentSubjectsData.filter(subject => subject.id !== deletedId)
+          );
+        }
+        
+        // Invalidar otras consultas relacionadas
         queryClient.invalidateQueries({
           queryKey: ["/api/careers", selectedCareer.id, "subjects"]
         });
-        queryClient.invalidateQueries({ 
-          queryKey: ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear] 
-        });
-        
-        // Invalidar contador de materias
         queryClient.invalidateQueries({
           queryKey: ["/api/careers", selectedCareer.id, "subject-count"]
         });
       }
-      
-      // Invalidar estadísticas generales
-      queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
       
       toast({
         title: "Materia eliminada",
