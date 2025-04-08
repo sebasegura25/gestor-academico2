@@ -13,6 +13,14 @@ import {
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Inicializar el usuario administrador por defecto
+  try {
+    await storage.initializeAdminUser();
+    console.log("Admin user initialization completed");
+  } catch (error) {
+    console.error("Error initializing admin user:", error);
+  }
+  
   // Set up authentication routes
   setupAuth(app);
   

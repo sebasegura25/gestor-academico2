@@ -1,31 +1,16 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { Express } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
+import { User as SelectUser, users } from "@shared/schema";
+import { db } from "./db";
+import { hashPassword, comparePasswords } from "./auth-utils.js";
 
 declare global {
   namespace Express {
     interface User extends SelectUser {}
   }
-}
-
-const scryptAsync = promisify(scrypt);
-
-async function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-async function comparePasswords(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
 }
 
 export function setupAuth(app: Express) {
@@ -69,9 +54,9 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { username, password, fullName, email, role } = req.body;
+      const { username, password, fullName, email } = req.body;
       
       if (!username || !password || !fullName || !email) {
         return res.status(400).json({ message: "Todos los campos son requeridos" });
@@ -82,12 +67,7 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "El nombre de usuario ya existe" });
       }
       
-      // Validate role
-      const validRoles = ["admin", "docente", "estudiante"];
-      if (role && !validRoles.includes(role)) {
-        return res.status(400).json({ message: "Rol inválido" });
-      }
-      
+      // El rol es "pendiente" por defecto y deberá ser asignado por un administrador
       const hashedPassword = await hashPassword(password);
       
       const user = await storage.createUser({
@@ -95,13 +75,13 @@ export function setupAuth(app: Express) {
         password: hashedPassword,
         fullName,
         email,
-        role: role || "estudiante"
+        role: "pendiente"
       });
       
       // Remove password from response
       const { password: _, ...userWithoutPassword } = user;
       
-      req.login(user, (err) => {
+      req.login(user, (err: any) => {
         if (err) return next(err);
         res.status(201).json(userWithoutPassword);
       });
@@ -110,30 +90,30 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+  app.post("/api/login", (req: Request, res: Response, next: NextFunction) => {
+    passport.authenticate("local", (err: any, user: SelectUser | false, info: { message: string }) => {
       if (err) return next(err);
-      if (!user) return res.status(401).json({ message: info.message || "Credenciales inválidas" });
+      if (!user) return res.status(401).json({ message: info?.message || "Credenciales inválidas" });
       
       req.login(user, (err) => {
         if (err) return next(err);
         
         // Remove password from response
-        const { password, ...userWithoutPassword } = user;
+        const { password, ...userWithoutPassword } = user as any;
         
         res.status(200).json(userWithoutPassword);
       });
     })(req, res, next);
   });
 
-  app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
+  app.post("/api/logout", (req: Request, res: Response, next: NextFunction) => {
+    req.logout((err: any) => {
       if (err) return next(err);
       res.sendStatus(200);
     });
   });
 
-  app.get("/api/user", (req, res) => {
+  app.get("/api/user", (req: Request, res: Response) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "No autenticado" });
     }
@@ -142,5 +122,63 @@ export function setupAuth(app: Express) {
     const { password, ...userWithoutPassword } = req.user as any;
     
     res.json(userWithoutPassword);
+  });
+  
+  // Middleware para verificar si el usuario es administrador
+  const isAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "No autenticado" });
+    }
+    
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "No tienes permisos de administrador" });
+    }
+    
+    next();
+  };
+  
+  // Ruta para listar todos los usuarios (solo para administradores)
+  app.get("/api/users", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const allUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        fullName: users.fullName,
+        email: users.email,
+        role: users.role,
+        createdAt: users.createdAt
+      }).from(users);
+      
+      res.json(allUsers);
+    } catch (error) {
+      res.status(500).json({ message: "Error al obtener usuarios" });
+    }
+  });
+  
+  // Ruta para que los administradores asignen roles a los usuarios
+  app.patch("/api/users/:id/role", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const { role } = req.body;
+      
+      if (!role) {
+        return res.status(400).json({ message: "El rol es requerido" });
+      }
+      
+      // Validar rol
+      const validRoles = ["admin", "docente", "estudiante", "pendiente"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ message: "Rol inválido" });
+      }
+      
+      const user = await storage.updateUser(userId, { role });
+      
+      // Remover la contraseña de la respuesta
+      const { password, ...userWithoutPassword } = user;
+      
+      res.json(userWithoutPassword);
+    } catch (error) {
+      res.status(500).json({ message: "Error al actualizar rol" });
+    }
   });
 }

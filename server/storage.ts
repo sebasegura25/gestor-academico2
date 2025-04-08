@@ -1,16 +1,30 @@
-import {
-  users, careers, subjects, requirements, students, studentSubjects, enrollments,
-  type User, type InsertUser, type Career, type InsertCareer,
-  type Subject, type InsertSubject, type Requirement, type InsertRequirement,
-  type Student, type InsertStudent, type StudentSubject, type InsertStudentSubject,
-  type Enrollment, type InsertEnrollment
+import { 
+  User, InsertUser, 
+  Career, InsertCareer, 
+  Subject, InsertSubject, 
+  Requirement, InsertRequirement,
+  Student, InsertStudent,
+  StudentSubject, InsertStudentSubject,
+  Enrollment, InsertEnrollment
 } from "@shared/schema";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
+import { pool } from "./db";
+import { eq, and, sql } from "drizzle-orm";
+import { 
+  users, 
+  careers, 
+  subjects, 
+  requirements, 
+  students, 
+  studentSubjects, 
+  enrollments 
+} from "@shared/schema";
+import { hashPassword } from "./auth-utils.js";
 
-const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
-// Interface for storage operations
 export interface IStorage {
   // User management
   getUser(id: number): Promise<User | undefined>;
@@ -57,458 +71,285 @@ export interface IStorage {
   deleteEnrollment(id: number): Promise<void>;
   
   // For authentication
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Store instance for session management
+  
+  // Additional method to initialize admin user
+  initializeAdminUser(): Promise<void>;
 }
 
-// Memory Storage implementation
-export class MemStorage implements IStorage {
-  private usersData: Map<number, User>;
-  private careersData: Map<number, Career>;
-  private subjectsData: Map<number, Subject>;
-  private requirementsData: Map<number, Requirement>;
-  private studentsData: Map<number, Student>;
-  private studentSubjectsData: Map<number, StudentSubject>;
-  private enrollmentsData: Map<number, Enrollment>;
-  
-  private userIdCounter: number;
-  private careerIdCounter: number;
-  private subjectIdCounter: number;
-  private requirementIdCounter: number;
-  private studentIdCounter: number;
-  private studentSubjectIdCounter: number;
-  private enrollmentIdCounter: number;
-  
-  sessionStore: session.SessionStore;
+export class DatabaseStorage implements IStorage {
+  sessionStore: any;
   
   constructor() {
-    this.usersData = new Map();
-    this.careersData = new Map();
-    this.subjectsData = new Map();
-    this.requirementsData = new Map();
-    this.studentsData = new Map();
-    this.studentSubjectsData = new Map();
-    this.enrollmentsData = new Map();
-    
-    this.userIdCounter = 1;
-    this.careerIdCounter = 1;
-    this.subjectIdCounter = 1;
-    this.requirementIdCounter = 1;
-    this.studentIdCounter = 1;
-    this.studentSubjectIdCounter = 1;
-    this.enrollmentIdCounter = 1;
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
-    
-    // Initialize with some default data after schema is ready
-    this.initializeData();
-  }
-  
-  // Initialize some sample data
-  private async initializeData() {
-    // Create admin user
-    await this.createUser({
-      username: "admin",
-      password: "admin123", // This will be hashed in auth.ts
-      fullName: "Admin Usuario",
-      email: "admin@instituto.edu",
-      role: "admin"
-    });
-    
-    // Create some careers
-    const mathCareer = await this.createCareer({
-      name: "Prof. Matemática",
-      durationYears: 4
-    });
-    
-    const langCareer = await this.createCareer({
-      name: "Prof. Lengua",
-      durationYears: 4
-    });
-    
-    // Create some subjects for math career
-    const algebra = await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT101",
-      name: "Álgebra I",
-      year: 1,
-      hoursCount: 64
-    });
-    
-    await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT102",
-      name: "Análisis I",
-      year: 1,
-      hoursCount: 64
-    });
-    
-    await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT103",
-      name: "Geometría I",
-      year: 1,
-      hoursCount: 64
-    });
-    
-    await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT104",
-      name: "Didáctica",
-      year: 1,
-      hoursCount: 48
-    });
-    
-    await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT105",
-      name: "Historia de la Matemática",
-      year: 1,
-      hoursCount: 48
-    });
-    
-    // Create 2nd year subjects
-    const algebra2 = await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT201",
-      name: "Álgebra II",
-      year: 2,
-      hoursCount: 64
-    });
-    
-    const analisis2 = await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT202",
-      name: "Análisis II",
-      year: 2,
-      hoursCount: 64
-    });
-    
-    await this.createSubject({
-      careerId: mathCareer.id,
-      code: "MAT203",
-      name: "Geometría II",
-      year: 2,
-      hoursCount: 64
-    });
-    
-    // Create requirements
-    await this.addRequirement({
-      subjectId: algebra2.id,
-      requiredSubjectId: algebra.id
-    });
-    
-    await this.addRequirement({
-      subjectId: analisis2.id,
-      requiredSubjectId: algebra.id
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true
     });
   }
   
-  // User methods
+  async initializeAdminUser(): Promise<void> {
+    // Check if admin user already exists
+    const existingAdmin = await this.getUserByUsername("admin");
+    
+    if (!existingAdmin) {
+      // Hash the password
+      const hashedPassword = await hashPassword("qwerty");
+      
+      // Create admin user if it doesn't exist
+      await this.createUser({
+        username: "admin",
+        password: hashedPassword,
+        fullName: "Administrador",
+        email: "admin@institutogestor.edu",
+        role: "admin"
+      });
+      console.log("Admin user created with username 'admin' and password 'qwerty'");
+    }
+  }
+  
   async getUser(id: number): Promise<User | undefined> {
-    return this.usersData.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
   
   async getUserByUsername(username: string): Promise<User | undefined> {
-    for (const user of this.usersData.values()) {
-      if (user.username === username) {
-        return user;
-      }
-    }
-    return undefined;
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
   
   async createUser(userData: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const now = new Date();
-    
-    const user: User = {
-      id,
-      ...userData,
-      createdAt: now
-    };
-    
-    this.usersData.set(id, user);
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
   
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
-    const existingUser = await this.getUser(id);
-    if (!existingUser) {
-      throw new Error("User not found");
+    const [user] = await db
+      .update(users)
+      .set({...userData, updatedAt: new Date()})
+      .where(eq(users.id, id))
+      .returning();
+    
+    if (!user) {
+      throw new Error(`User with id ${id} not found`);
     }
     
-    const updatedUser = { ...existingUser, ...userData };
-    this.usersData.set(id, updatedUser);
-    
-    return updatedUser;
+    return user;
   }
   
-  // Career methods
   async getCareers(): Promise<Career[]> {
-    return Array.from(this.careersData.values());
+    return db.select().from(careers).orderBy(careers.name);
   }
   
   async getCareer(id: number): Promise<Career | undefined> {
-    return this.careersData.get(id);
+    const [career] = await db.select().from(careers).where(eq(careers.id, id));
+    return career;
   }
   
   async createCareer(careerData: InsertCareer): Promise<Career> {
-    const id = this.careerIdCounter++;
-    const now = new Date();
-    
-    const career: Career = {
-      id,
-      ...careerData,
-      createdAt: now
-    };
-    
-    this.careersData.set(id, career);
+    const [career] = await db.insert(careers).values(careerData).returning();
     return career;
   }
   
   async updateCareer(id: number, careerData: Partial<Career>): Promise<Career> {
-    const existingCareer = await this.getCareer(id);
-    if (!existingCareer) {
-      throw new Error("Career not found");
+    const [career] = await db
+      .update(careers)
+      .set({...careerData, updatedAt: new Date()})
+      .where(eq(careers.id, id))
+      .returning();
+    
+    if (!career) {
+      throw new Error(`Career with id ${id} not found`);
     }
     
-    const updatedCareer = { ...existingCareer, ...careerData };
-    this.careersData.set(id, updatedCareer);
-    
-    return updatedCareer;
+    return career;
   }
   
   async deleteCareer(id: number): Promise<void> {
-    if (!this.careersData.has(id)) {
-      throw new Error("Career not found");
+    // First delete all subjects associated with this career
+    const careerSubjects = await this.getSubjects(id);
+    for (const subject of careerSubjects) {
+      await this.deleteSubject(subject.id);
     }
     
-    this.careersData.delete(id);
+    // Then delete the career
+    await db.delete(careers).where(eq(careers.id, id));
   }
   
-  // Subject methods
   async getSubjects(careerId?: number): Promise<Subject[]> {
-    const subjects = Array.from(this.subjectsData.values());
-    
     if (careerId !== undefined) {
-      return subjects.filter(subject => subject.careerId === careerId);
+      return db.select().from(subjects).where(eq(subjects.careerId, careerId)).orderBy(subjects.year);
     }
-    
-    return subjects;
+    return db.select().from(subjects).orderBy(subjects.careerId);
   }
   
   async getSubject(id: number): Promise<Subject | undefined> {
-    return this.subjectsData.get(id);
+    const [subject] = await db.select().from(subjects).where(eq(subjects.id, id));
+    return subject;
   }
   
   async getSubjectsByYear(careerId: number, year: number): Promise<Subject[]> {
-    const subjects = Array.from(this.subjectsData.values());
-    return subjects.filter(subject => subject.careerId === careerId && subject.year === year);
+    return db
+      .select()
+      .from(subjects)
+      .where(and(
+        eq(subjects.careerId, careerId),
+        eq(subjects.year, year)
+      ))
+      .orderBy(subjects.name);
   }
   
   async createSubject(subjectData: InsertSubject): Promise<Subject> {
-    const id = this.subjectIdCounter++;
-    const now = new Date();
-    
-    const subject: Subject = {
-      id,
-      ...subjectData,
-      createdAt: now
-    };
-    
-    this.subjectsData.set(id, subject);
+    const [subject] = await db.insert(subjects).values(subjectData).returning();
     return subject;
   }
   
   async updateSubject(id: number, subjectData: Partial<Subject>): Promise<Subject> {
-    const existingSubject = await this.getSubject(id);
-    if (!existingSubject) {
-      throw new Error("Subject not found");
+    const [subject] = await db
+      .update(subjects)
+      .set({...subjectData, updatedAt: new Date()})
+      .where(eq(subjects.id, id))
+      .returning();
+    
+    if (!subject) {
+      throw new Error(`Subject with id ${id} not found`);
     }
     
-    const updatedSubject = { ...existingSubject, ...subjectData };
-    this.subjectsData.set(id, updatedSubject);
-    
-    return updatedSubject;
+    return subject;
   }
   
   async deleteSubject(id: number): Promise<void> {
-    if (!this.subjectsData.has(id)) {
-      throw new Error("Subject not found");
-    }
+    // First delete all requirements associated with this subject
+    await db.delete(requirements).where(
+      sql`${requirements.subjectId} = ${id} OR ${requirements.requiredSubjectId} = ${id}`
+    );
     
-    this.subjectsData.delete(id);
+    // Then delete the subject
+    await db.delete(subjects).where(eq(subjects.id, id));
   }
   
-  // Requirements methods
   async getRequirements(subjectId: number): Promise<Requirement[]> {
-    const requirements = Array.from(this.requirementsData.values());
-    return requirements.filter(req => req.subjectId === subjectId);
+    return db.select().from(requirements).where(eq(requirements.subjectId, subjectId));
   }
   
   async addRequirement(requirementData: InsertRequirement): Promise<Requirement> {
-    const id = this.requirementIdCounter++;
-    const now = new Date();
-    
-    const requirement: Requirement = {
-      id,
-      ...requirementData,
-      createdAt: now
-    };
-    
-    this.requirementsData.set(id, requirement);
+    const [requirement] = await db.insert(requirements).values(requirementData).returning();
     return requirement;
   }
   
   async removeRequirement(id: number): Promise<void> {
-    if (!this.requirementsData.has(id)) {
-      throw new Error("Requirement not found");
-    }
-    
-    this.requirementsData.delete(id);
+    await db.delete(requirements).where(eq(requirements.id, id));
   }
   
-  // Student methods
   async getStudents(): Promise<Student[]> {
-    return Array.from(this.studentsData.values());
+    return db.select().from(students);
   }
   
   async getStudent(id: number): Promise<Student | undefined> {
-    return this.studentsData.get(id);
+    const [student] = await db.select().from(students).where(eq(students.id, id));
+    return student;
   }
   
   async getStudentByUserId(userId: number): Promise<Student | undefined> {
-    for (const student of this.studentsData.values()) {
-      if (student.userId === userId) {
-        return student;
-      }
-    }
-    return undefined;
+    const [student] = await db.select().from(students).where(eq(students.userId, userId));
+    return student;
   }
   
   async createStudent(studentData: InsertStudent): Promise<Student> {
-    const id = this.studentIdCounter++;
-    const now = new Date();
-    
-    const student: Student = {
-      id,
-      ...studentData,
-      createdAt: now
-    };
-    
-    this.studentsData.set(id, student);
+    const [student] = await db.insert(students).values(studentData).returning();
     return student;
   }
   
   async updateStudent(id: number, studentData: Partial<Student>): Promise<Student> {
-    const existingStudent = await this.getStudent(id);
-    if (!existingStudent) {
-      throw new Error("Student not found");
+    const [student] = await db
+      .update(students)
+      .set({...studentData, updatedAt: new Date()})
+      .where(eq(students.id, id))
+      .returning();
+    
+    if (!student) {
+      throw new Error(`Student with id ${id} not found`);
     }
     
-    const updatedStudent = { ...existingStudent, ...studentData };
-    this.studentsData.set(id, updatedStudent);
-    
-    return updatedStudent;
+    return student;
   }
   
-  // StudentSubject methods
   async getStudentSubjects(studentId: number): Promise<StudentSubject[]> {
-    const studentSubjects = Array.from(this.studentSubjectsData.values());
-    return studentSubjects.filter(ss => ss.studentId === studentId);
+    return db.select().from(studentSubjects).where(eq(studentSubjects.studentId, studentId));
   }
   
   async getStudentSubjectsWithDetails(studentId: number): Promise<any[]> {
-    const studentSubjects = await this.getStudentSubjects(studentId);
-    const result = [];
+    const studentSubjectsData = await this.getStudentSubjects(studentId);
     
-    for (const ss of studentSubjects) {
+    const result = [];
+    for (const ss of studentSubjectsData) {
       const subject = await this.getSubject(ss.subjectId);
-      if (subject) {
-        result.push({
-          ...ss,
-          subject
-        });
-      }
+      result.push({
+        ...ss,
+        subject
+      });
     }
     
     return result;
   }
   
   async updateStudentSubjectStatus(
-    id: number, 
-    status: string, 
+    id: number,
+    status: string,
     date: Date = new Date()
   ): Promise<StudentSubject> {
-    const existingSS = this.studentSubjectsData.get(id);
-    if (!existingSS) {
-      throw new Error("Student-subject record not found");
-    }
+    const updateData: any = { status };
     
-    const updatedSS: StudentSubject = { ...existingSS, status };
-    
+    // Set the appropriate date fields based on status
     if (status === "regular") {
-      updatedSS.regularizedDate = date;
+      updateData.regularizedDate = date;
     } else if (status === "acreditada") {
-      updatedSS.accreditedDate = date;
+      updateData.accreditedDate = date;
     }
     
-    this.studentSubjectsData.set(id, updatedSS);
-    return updatedSS;
-  }
-  
-  async addStudentSubject(ssData: InsertStudentSubject): Promise<StudentSubject> {
-    const id = this.studentSubjectIdCounter++;
-    const now = new Date();
+    const [studentSubject] = await db
+      .update(studentSubjects)
+      .set(updateData)
+      .where(eq(studentSubjects.id, id))
+      .returning();
     
-    const studentSubject: StudentSubject = {
-      id,
-      ...ssData,
-      createdAt: now
-    };
+    if (!studentSubject) {
+      throw new Error(`StudentSubject with id ${id} not found`);
+    }
     
-    this.studentSubjectsData.set(id, studentSubject);
     return studentSubject;
   }
   
-  // Enrollment methods
+  async addStudentSubject(ssData: InsertStudentSubject): Promise<StudentSubject> {
+    const [studentSubject] = await db.insert(studentSubjects).values(ssData).returning();
+    return studentSubject;
+  }
+  
   async getEnrollments(studentId?: number, subjectId?: number): Promise<Enrollment[]> {
-    const enrollments = Array.from(this.enrollmentsData.values());
+    let conditions = [];
     
-    if (studentId !== undefined && subjectId !== undefined) {
-      return enrollments.filter(e => e.studentId === studentId && e.subjectId === subjectId);
-    } else if (studentId !== undefined) {
-      return enrollments.filter(e => e.studentId === studentId);
-    } else if (subjectId !== undefined) {
-      return enrollments.filter(e => e.subjectId === subjectId);
+    if (studentId !== undefined) {
+      conditions.push(eq(enrollments.studentId, studentId));
     }
     
-    return enrollments;
+    if (subjectId !== undefined) {
+      conditions.push(eq(enrollments.subjectId, subjectId));
+    }
+    
+    if (conditions.length > 0) {
+      return db.select().from(enrollments).where(and(...conditions));
+    }
+    
+    return db.select().from(enrollments);
   }
   
   async createEnrollment(enrollmentData: InsertEnrollment): Promise<Enrollment> {
-    const id = this.enrollmentIdCounter++;
-    const now = new Date();
-    
-    const enrollment: Enrollment = {
-      id,
-      ...enrollmentData,
-      createdAt: now
-    };
-    
-    this.enrollmentsData.set(id, enrollment);
+    const [enrollment] = await db.insert(enrollments).values(enrollmentData).returning();
     return enrollment;
   }
   
   async deleteEnrollment(id: number): Promise<void> {
-    if (!this.enrollmentsData.has(id)) {
-      throw new Error("Enrollment not found");
-    }
-    
-    this.enrollmentsData.delete(id);
+    await db.delete(enrollments).where(eq(enrollments.id, id));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

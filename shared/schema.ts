@@ -7,9 +7,10 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   fullName: text("full_name").notNull(),
-  role: text("role").notNull().default("estudiante"), // "admin", "docente", "estudiante"
+  role: text("role").notNull().default("estudiante"), // "admin", "docente", "estudiante", "pendiente"
   email: text("email").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const careers = pgTable("careers", {
@@ -17,6 +18,7 @@ export const careers = pgTable("careers", {
   name: text("name").notNull(),
   durationYears: integer("duration_years").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const subjects = pgTable("subjects", {
@@ -27,6 +29,7 @@ export const subjects = pgTable("subjects", {
   year: integer("year").notNull(),
   hoursCount: integer("hours_count").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const requirements = pgTable("requirements", {
@@ -34,6 +37,7 @@ export const requirements = pgTable("requirements", {
   subjectId: integer("subject_id").notNull(),
   requiredSubjectId: integer("required_subject_id").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const students = pgTable("students", {
@@ -44,6 +48,7 @@ export const students = pgTable("students", {
   fileNumber: text("file_number").notNull().unique(),
   enrollmentYear: integer("enrollment_year").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const studentSubjects = pgTable("student_subjects", {
@@ -55,6 +60,7 @@ export const studentSubjects = pgTable("student_subjects", {
   regularizedDate: timestamp("regularized_date"),
   accreditedDate: timestamp("accredited_date"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const enrollments = pgTable("enrollments", {
@@ -64,6 +70,7 @@ export const enrollments = pgTable("enrollments", {
   type: text("type").notNull(), // "cursada", "examen"
   examDate: timestamp("exam_date"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
