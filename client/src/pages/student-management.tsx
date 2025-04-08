@@ -202,13 +202,21 @@ export default function StudentManagement() {
             <Button 
               variant="outline"
               onClick={() => {
-                // Refrescar todas las consultas relacionadas
+                // Refrescar todas las consultas relacionadas explícitamente
                 queryClient.invalidateQueries({ queryKey: ["/api/students/with-details"] });
                 queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
                 
-                toast({
-                  title: "Datos actualizados",
-                  description: "La lista de estudiantes se ha actualizado",
+                // Forzar recarga de datos
+                fetch("/api/students/with-details").then(res => {
+                  if (res.ok) return res.json();
+                }).then(data => {
+                  // Actualiza la caché manualmente
+                  queryClient.setQueryData(["/api/students/with-details"], data);
+                  
+                  toast({
+                    title: "Datos actualizados",
+                    description: "La lista de estudiantes se ha actualizado",
+                  });
                 });
               }}
               className="flex items-center"

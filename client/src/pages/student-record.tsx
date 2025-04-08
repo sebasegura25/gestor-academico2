@@ -255,12 +255,15 @@ export default function StudentRecord() {
       <div className="md:ml-64 p-6">
         <div className="mb-6 flex justify-between items-center">
           <div>
-            <Link to="/student-management" className="text-sm text-[#0070f3] hover:underline mb-2 inline-flex items-center">
+            <button 
+              onClick={() => window.history.back()} 
+              className="text-sm text-[#0070f3] hover:underline mb-2 inline-flex items-center"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Volver a la lista de estudiantes
-            </Link>
+              Volver
+            </button>
             <h1 className="text-2xl font-semibold text-[#1d1d1f]">Legajo Estudiantil</h1>
             <p className="text-[#8e8e93]">Seguimiento académico y estado de materias</p>
           </div>
@@ -271,6 +274,7 @@ export default function StudentRecord() {
               // Refrescar todas las consultas relacionadas
               queryClient.invalidateQueries({ queryKey: ["/api/students", studentId] });
               queryClient.invalidateQueries({ queryKey: ["/api/students", studentId, "subjects"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/careers", student?.careerId, "subjects"] });
               
               toast({
                 title: "Datos actualizados",
