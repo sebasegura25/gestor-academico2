@@ -123,10 +123,21 @@ export default function StudentRecord() {
     enabled: !!student?.careerId
   });
   
-  // Get subjects for selected year
+  // Get all career subjects for the selected year
+  const yearSubjects = careerSubjects?.filter(
+    (subject) => subject.year === selectedYear
+  ) || [];
+  
+  // Get subjects for selected year that the student is already enrolled in
   const filteredSubjects = studentSubjects?.filter(
     (ss) => ss.subject.year === selectedYear
   ) || [];
+  
+  // Create a map of enrolled subjects by subjectId
+  const enrolledSubjectsMap = new Map();
+  filteredSubjects.forEach(ss => {
+    enrolledSubjectsMap.set(ss.subjectId, ss);
+  });
   
   // Update or create student subject status mutation
   const updateSubjectStatusMutation = useMutation({
@@ -363,24 +374,20 @@ export default function StudentRecord() {
               </h2>
               
               <Dialog open={openSubjectDialog} onOpenChange={setOpenSubjectDialog}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Agregar materia
-                  </Button>
-                </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>
-                      {selectedSubject ? "Actualizar Estado de Materia" : "Agregar Nueva Materia"}
+                      {selectedSubject ? 
+                        "Actualizar Estado de Materia" : 
+                        careerSubjects?.find(s => s.id === subjectForm.getValues("subjectId"))?.name ? 
+                          `Inscribir en ${careerSubjects?.find(s => s.id === subjectForm.getValues("subjectId"))?.name}` : 
+                          "Agregar Materia"}
                     </DialogTitle>
                   </DialogHeader>
                   
                   <Form {...subjectForm}>
                     <form onSubmit={subjectForm.handleSubmit(onSubjectSubmit)} className="space-y-4">
-                      {!selectedSubject && (
+                      {!selectedSubject && subjectForm.getValues("subjectId") === 0 && (
                         <FormField
                           control={subjectForm.control}
                           name="subjectId"
@@ -408,6 +415,15 @@ export default function StudentRecord() {
                             </FormItem>
                           )}
                         />
+                      )}
+                      
+                      {!selectedSubject && subjectForm.getValues("subjectId") !== 0 && (
+                        <div className="mb-4">
+                          <p className="text-sm font-medium text-[#8e8e93] mb-1">Materia:</p>
+                          <p className="font-medium">
+                            {careerSubjects?.find(s => s.id === subjectForm.getValues("subjectId"))?.name || "Materia seleccionada"}
+                          </p>
+                        </div>
                       )}
                       
                       <FormField
@@ -524,7 +540,8 @@ export default function StudentRecord() {
                           className="bg-[#0070f3] hover:bg-blue-600"
                           disabled={updateSubjectStatusMutation.isPending}
                         >
-                          {updateSubjectStatusMutation.isPending ? "Guardando..." : "Guardar estado"}
+                          {updateSubjectStatusMutation.isPending ? "Guardando..." : 
+                            selectedSubject ? "Actualizar estado" : "Inscribir materia"}
                         </Button>
                       </DialogFooter>
                     </form>
@@ -566,7 +583,7 @@ export default function StudentRecord() {
                         </tr>
                       </thead>
                       <tbody className="text-[#3a3a3c]">
-                        {isLoadingSubjects ? (
+                        {isLoadingSubjects || isLoadingCareerSubjects ? (
                           // Skeleton loaders
                           Array(3).fill(0).map((_, i) => (
                             <tr key={i} className="border-b border-[#e5e5ea]">
@@ -580,35 +597,56 @@ export default function StudentRecord() {
                               <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
                             </tr>
                           ))
-                        ) : filteredSubjects && filteredSubjects.length > 0 ? (
-                          // Actual subjects
-                          filteredSubjects.map((ss) => {
-                            const status = getStatusDetails(ss.status);
+                        ) : yearSubjects && yearSubjects.length > 0 ? (
+                          // Show all career subjects for this year
+                          yearSubjects.map((subject) => {
+                            // Check if student is enrolled in this subject
+                            const studentSubject = enrolledSubjectsMap.get(subject.id);
+                            const isEnrolled = !!studentSubject;
+                            
+                            // Get status details based on enrollment
+                            const status = isEnrolled 
+                              ? getStatusDetails(studentSubject.status)
+                              : { text: "No Inscripto", bgColor: "bg-gray-100", textColor: "text-gray-800" };
+                            
                             return (
-                              <tr key={ss.id} className="border-b border-[#e5e5ea]">
-                                <td className="py-3 px-4">{ss.subject.code}</td>
-                                <td className="py-3 px-4">{ss.subject.name}</td>
+                              <tr key={subject.id} className="border-b border-[#e5e5ea]">
+                                <td className="py-3 px-4">{subject.code}</td>
+                                <td className="py-3 px-4">{subject.name}</td>
                                 <td className="py-3 px-4">
                                   <span className={`inline-block px-2 py-1 rounded-full text-xs ${status.bgColor} ${status.textColor}`}>
                                     {status.text}
                                   </span>
                                 </td>
-                                <td className="py-3 px-4">{ss.grade || "-"}</td>
+                                <td className="py-3 px-4">{isEnrolled ? (studentSubject.grade || "-") : "-"}</td>
                                 <td className="py-3 px-4">
-                                  {ss.date ? new Date(ss.date).toLocaleDateString() : "-"}
+                                  {isEnrolled && studentSubject.date 
+                                    ? new Date(studentSubject.date).toLocaleDateString() 
+                                    : "-"}
                                 </td>
-                                <td className="py-3 px-4">{ss.book || "-"}</td>
-                                <td className="py-3 px-4">{ss.folio || "-"}</td>
+                                <td className="py-3 px-4">{isEnrolled ? (studentSubject.book || "-") : "-"}</td>
+                                <td className="py-3 px-4">{isEnrolled ? (studentSubject.folio || "-") : "-"}</td>
                                 <td className="py-3 px-4">
                                   <Button 
                                     variant="link" 
                                     className="text-[#0070f3] text-sm p-0 h-auto"
                                     onClick={() => {
-                                      setSelectedSubject(ss);
+                                      if (isEnrolled) {
+                                        // Edit existing enrollment
+                                        setSelectedSubject(studentSubject);
+                                      } else {
+                                        // Create new enrollment with default values
+                                        setSelectedSubject(null);
+                                        subjectForm.reset({
+                                          studentId: studentId,
+                                          subjectId: subject.id,
+                                          status: "libre"
+                                        });
+                                      }
                                       setOpenSubjectDialog(true);
                                     }}
                                   >
-                                    Actualizar
+                                    {isEnrolled ? "Actualizar" : "Inscribir"}
                                   </Button>
                                 </td>
                               </tr>
@@ -617,7 +655,7 @@ export default function StudentRecord() {
                         ) : (
                           <tr>
                             <td colSpan={8} className="py-6 text-center text-[#8e8e93]">
-                              No hay materias asignadas para este año. Agrega materias usando el botón "Agregar materia".
+                              No hay materias configuradas para este año en esta carrera.
                             </td>
                           </tr>
                         )}
