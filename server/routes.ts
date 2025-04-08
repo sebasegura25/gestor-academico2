@@ -295,13 +295,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/students", async (req, res) => {
     try {
-      const validatedData = insertStudentSchema.parse(req.body);
+      // Extraer los datos del usuario
+      const { username, password, fullName, email, careerId, fileNumber, enrollmentDate, status } = req.body;
+      
+      // Validar que se proporcionan los campos necesarios
+      if (!username || !password || !fullName || !email || !careerId || !fileNumber || !enrollmentDate) {
+        return res.status(400).json({ error: "Faltan campos requeridos" });
+      }
+      
+      // Hashear la contraseña
+      const { hashPassword } = await import('./auth-utils.js');
+      const hashedPassword = await hashPassword(password);
+      
+      // Crear el usuario primero
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        fullName,
+        email,
+        role: "student"
+      });
+      
+      // Luego crear el estudiante con el ID del usuario creado
+      const studentData = {
+        userId: user.id,
+        careerId: parseInt(careerId),
+        fileNumber,
+        enrollmentDate: new Date(enrollmentDate),
+        status: status || "active"
+      };
+      
+      // Validar con el schema
+      const validatedData = insertStudentSchema.parse(studentData);
       const student = await storage.createStudent(validatedData);
-      res.status(201).json(student);
+      
+      // Devolver respuesta exitosa
+      res.status(201).json({
+        ...student,
+        user
+      });
     } catch (error) {
+      console.error("Error creating student:", error);
+      
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
+      
+      // Error genérico
       res.status(500).json({ error: "Failed to create student" });
     }
   });

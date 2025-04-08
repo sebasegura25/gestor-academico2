@@ -10,6 +10,7 @@ import {
   DialogTitle, 
   DialogFooter,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { 
   AlertDialog,
@@ -223,6 +224,9 @@ export default function StudentManagement() {
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>Crear Nuevo Estudiante</DialogTitle>
+                  <DialogDescription>
+                    Complete los datos del estudiante para registrarlo en el sistema
+                  </DialogDescription>
                 </DialogHeader>
                 
                 <Form {...studentForm}>
