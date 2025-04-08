@@ -1,0 +1,309 @@
+ Gestor de Instituto Docente
+1. Contexto del Proyecto
+Desarrollar una aplicación web full-stack en Replit que incluya:
+
+Frontend: Vue.js + Tailwind CSS (estilo Apple)
+
+Backend: Node.js/Express o Python/Flask
+
+Base de datos: SQLite/Replit DB o PostgreSQL
+
+Hosting: Integración con Vercel/Replit Deploy
+
+Funcionalidades clave:
+
+Gestión de carreras y planes de estudio con correlatividades
+
+Legajos estudiantiles con estados académicos (Cursando/Regular/Acreditada/Libre)
+
+Sistema de inscripciones a cursadas/exámenes
+
+Autenticación de usuarios (admin/docente/estudiante)
+
+2. Configuración Inicial en Replit
+2.1 Creación del Proyecto
+Crear nuevo repl:
+
+Tipo: Node.js (para JavaScript full-stack) o Python (para Flask)
+
+Nombre: gestor-docente
+
+Visibilidad: Privado (requiere cuenta Pro)
+
+Estructura de archivos:
+
+bash
+Copy
+/
+├── client/           # Frontend Vue.js
+│   ├── src/
+│   │   ├── assets/
+│   │   ├── components/
+│   │   └── views/
+├── server/           # Backend Node.js
+│   ├── models/
+│   ├── routes/
+│   └── database.db  # SQLite
+├── .replit          # Configuración de ejecución
+└── README.md
+Configurar .replit:
+
+ini
+Copy
+[run]
+command = "cd server && npm start && cd ../client && npm run dev"
+
+[packages]
+nodejs = "*"
+python-3 = "*"
+2.2 Base de Datos
+Opción 1 (SQLite):
+
+javascript
+Copy
+// server/database.js
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database('database.db');
+
+// Crear tablas
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS careers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    duration_years INTEGER
+  )`);
+  
+  // Crear tablas restantes (subjects, students, enrollments, etc)
+});
+Opción 2 (Replit DB):
+
+javascript
+Copy
+const Database = require('@replit/database');
+const db = new Database();
+
+// Estructurar datos
+async function initDB() {
+  await db.set('careers', []);
+  await db.set('students', []);
+}
+3. Desarrollo del Backend
+3.1 Endpoints Esenciales
+javascript
+Copy
+// server/routes/students.js
+router.get('/:id/record', async (req, res) => {
+  const record = await db.get(`
+    SELECT subjects.*, student_subjects.status 
+    FROM student_subjects
+    JOIN subjects ON student_subjects.subject_id = subjects.id
+    WHERE student_id = ?`, [req.params.id]);
+  
+  res.json({
+    student: await db.get('SELECT * FROM students WHERE id = ?', [req.params.id]),
+    subjects: record
+  });
+});
+
+// server/routes/enrollments.js
+router.post('/', async (req, res) => {
+  const { student_id, subject_id, type } = req.body;
+  
+  // Validar correlatividades
+  const requirements = await db.all(`
+    SELECT required_subject_id 
+    FROM subject_requirements 
+    WHERE subject_id = ?`, [subject_id]);
+
+  for (const req of requirements) {
+    const hasApproved = await db.get(`
+      SELECT status 
+      FROM student_subjects 
+      WHERE student_id = ? AND subject_id = ? 
+      AND status IN ('acreditada', 'regular')`, 
+      [student_id, req.required_subject_id]);
+    
+    if (!hasApproved) {
+      return res.status(400).json({ 
+        error: `Falta regularizar materia ${req.required_subject_id}` 
+      });
+    }
+  }
+  
+  // Crear inscripción
+  await db.run(`INSERT INTO enrollments (...) VALUES (...)`);
+  res.json({ success: true });
+});
+4. Desarrollo del Frontend
+4.1 Componente Legajo Estudiantil
+vue
+Copy
+<!-- client/src/components/StudentRecord.vue -->
+<template>
+  <div class="max-w-4xl mx-auto p-6">
+    <div class="bg-white rounded-xl shadow-sm p-6">
+      <h2 class="text-2xl font-semibold mb-4">{{ student.name }}</h2>
+      
+      <div v-for="subject in subjects" :key="subject.id" 
+           class="border-b border-gray-100 py-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <h3 class="font-medium">{{ subject.code }} - {{ subject.name }}</h3>
+            <p class="text-sm text-gray-500">{{ subject.year }}° año</p>
+          </div>
+          
+          <SubjectStatusBadge :status="subject.status" />
+        </div>
+        
+        <div v-if="subject.status === 'regular'" 
+             class="text-xs text-yellow-600 mt-2">
+          Vence el {{ calculateExpiry(subject.regularized_date) }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+4.2 Estilos Tailwind (apple-style)
+css
+Copy
+/* client/src/assets/app.css */
+@layer components {
+  .apple-btn {
+    @apply px-4 py-2 bg-slate-900 text-white rounded-lg 
+           hover:bg-slate-800 transition-colors shadow-sm;
+  }
+  
+  .status-badge {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+    
+    &[data-status="acreditada"] {
+      @apply bg-green-100 text-green-800;
+    }
+    &[data-status="regular"] {
+      @apply bg-yellow-100 text-yellow-800;
+    }
+  }
+}
+5. Configuración de Despliegue
+5.1 Integración con GitHub
+En Replit:
+
+Ir a Tools > Version Control
+
+Conectar con repositorio GitHub existente
+
+Configurar auto-sync en rama main
+
+Archivo .gitignore:
+
+gitignore
+Copy
+node_modules/
+*.db
+.env
+5.2 Hosting en Vercel
+En Vercel:
+
+Importar proyecto desde GitHub
+
+Configurar build settings:
+
+json
+Copy
+{
+  "buildCommand": "cd client && npm install && npm run build",
+  "outputDirectory": "client/dist"
+}
+Variables de entorno:
+
+Copy
+DATABASE_URL=file:./server/database.db
+SECRET_KEY=tu_clave_secreta
+6. Validaciones y Testing
+6.1 Pruebas Obligatorias
+javascript
+Copy
+// Prueba de correlatividades
+test('No permite inscripción sin correlativas aprobadas', async () => {
+  const response = await request(app)
+    .post('/enrollments')
+    .send({
+      student_id: 1,
+      subject_id: 201,  // Requiere MAT101
+      type: 'cursada'
+    });
+  
+  expect(response.statusCode).toBe(400);
+  expect(response.body.error).toMatch(/Falta regularizar/);
+});
+
+// Prueba de estados académicos
+test('Actualiza estado a Acreditada correctamente', async () => {
+  await db.run(`UPDATE student_subjects SET status='acreditada' WHERE id=1`);
+  const result = await db.get(`SELECT status FROM student_subjects WHERE id=1`);
+  expect(result.status).toBe('acreditada');
+});
+6.2 Datos de Demostración
+sql
+Copy
+INSERT INTO careers (name, duration_years) VALUES 
+('Prof. Matemática', 4),
+('Prof. Lengua', 4);
+
+INSERT INTO subjects (career_id, code, name, year) VALUES
+(1, 'MAT101', 'Álgebra I', 1),
+(1, 'MAT201', 'Análisis II', 2);
+7. Entregables Finales
+Repositorio Replit público/privado con:
+
+Código completo funcional
+
+Base de datos de prueba
+
+Documentación en README
+
+Instrucciones de Uso:
+
+bash
+Copy
+# Instalar dependencias
+npm install --prefix server
+npm install --prefix client
+
+# Ejecutar
+npm run start --prefix server
+npm run dev --prefix client
+Variables de Entorno:
+
+env
+Copy
+PORT=3000
+JWT_SECRET=clave_secreta_replit
+NODE_ENV=development
+Requisitos Específicos para Replit:
+
+Usar Nix packages para dependencias especiales:
+
+nix
+Copy
+{ pkgs }: {
+  deps = [
+    pkgs.nodejs-18_x
+    pkgs.python39
+    pkgs.sqlite
+  ];
+}
+Configurar Secrets en Replit:
+
+JWT_SECRET
+
+ADMIN_PASSWORD
+
+DATABASE_URL
+
+Optimizar para el Replit Shell:
+
+bash
+Copy
+# Ejecutar en modo producción
+npm run build --prefix client && npm start --prefix server
