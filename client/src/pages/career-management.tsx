@@ -354,63 +354,94 @@ export default function CareerManagement() {
             <p className="text-[#8e8e93]">Administración de planes de estudio</p>
           </div>
           
-          <Dialog open={openCareerDialog} onOpenChange={setOpenCareerDialog}>
-            <DialogTrigger asChild>
-              <Button className="bg-[#0070f3] text-white hover:bg-blue-600">
-                Nueva carrera
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Crear Nueva Carrera</DialogTitle>
-              </DialogHeader>
-              
-              <Form {...careerForm}>
-                <form onSubmit={careerForm.handleSubmit(onCareerSubmit)} className="space-y-4">
-                  <FormField
-                    control={careerForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre de la Carrera</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Ej: Prof. Matemática" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={careerForm.control}
-                    name="durationYears"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Duración (años)</FormLabel>
-                        <FormControl>
-                          <Input type="number" min="1" max="10" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setOpenCareerDialog(false)}>
-                      Cancelar
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      className="bg-[#0070f3] hover:bg-blue-600"
-                      disabled={createCareerMutation.isPending}
-                    >
-                      {createCareerMutation.isPending ? "Creando..." : "Crear Carrera"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <div className="flex space-x-2">
+            <Button 
+              variant="outline"
+              onClick={() => {
+                // Refrescar todas las consultas relacionadas
+                queryClient.invalidateQueries({ queryKey: ["/api/careers"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/statistics"] });
+                
+                // Actualizar también los contadores por cada carrera
+                if (careers) {
+                  careers.forEach(career => {
+                    queryClient.invalidateQueries({ 
+                      queryKey: ["/api/careers", career.id, "subject-count"] 
+                    });
+                  });
+                }
+                
+                toast({
+                  title: "Datos actualizados",
+                  description: "La lista de carreras y sus contadores se han actualizado",
+                });
+              }}
+              className="flex items-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Actualizar datos
+            </Button>
+            
+            <Dialog open={openCareerDialog} onOpenChange={setOpenCareerDialog}>
+              <DialogTrigger asChild>
+                <Button className="bg-[#0070f3] text-white hover:bg-blue-600">
+                  Nueva carrera
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Crear Nueva Carrera</DialogTitle>
+                </DialogHeader>
+                
+                <Form {...careerForm}>
+                  <form onSubmit={careerForm.handleSubmit(onCareerSubmit)} className="space-y-4">
+                    <FormField
+                      control={careerForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Nombre de la Carrera</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ej: Prof. Matemática" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={careerForm.control}
+                      name="durationYears"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Duración (años)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="1" max="10" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setOpenCareerDialog(false)}>
+                        Cancelar
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        className="bg-[#0070f3] hover:bg-blue-600"
+                        disabled={createCareerMutation.isPending}
+                      >
+                        {createCareerMutation.isPending ? "Creando..." : "Crear Carrera"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
         
         {/* Career Cards */}
@@ -482,6 +513,34 @@ export default function CareerManagement() {
                 Plan de Estudios: {selectedCareer.name}
               </h2>
               <div className="flex space-x-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    if (selectedCareer) {
+                      // Actualizar datos de materias para este año específico
+                      queryClient.invalidateQueries({ 
+                        queryKey: ["/api/careers", selectedCareer.id, "subjects", "year", selectedYear] 
+                      });
+                      
+                      // Actualizar también el contador de materias
+                      queryClient.invalidateQueries({ 
+                        queryKey: ["/api/careers", selectedCareer.id, "subject-count"] 
+                      });
+                      
+                      toast({
+                        title: "Materias actualizadas",
+                        description: "La lista de materias se ha actualizado",
+                      });
+                    }
+                  }}
+                  className="flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Actualizar materias
+                </Button>
                 <Button variant="outline" size="sm">
                   Editar plan
                 </Button>
