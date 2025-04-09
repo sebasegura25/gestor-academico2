@@ -9,7 +9,8 @@ import {
   insertRequirementSchema,
   insertStudentSchema,
   insertStudentSubjectSchema,
-  insertEnrollmentSchema
+  insertEnrollmentSchema,
+  StudentSubject
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -620,6 +621,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ count: subjects.length });
     } catch (error) {
       res.status(500).json({ error: "Error al obtener conteo de materias" });
+    }
+  });
+  
+  // Get recent activities
+  app.get("/api/activities", async (req, res) => {
+    try {
+      // Obtiene todas las actividades recientes (últimas actualizaciones de materias, inscripciones, etc.)
+      const limit = parseInt(req.query.limit as string) || 5;
+      
+      // Obtener las últimas inscripciones a materias (student-subjects)
+      const recentStudentSubjects = await storage.getRecentStudentSubjects(limit);
+      
+      // Formatear las actividades de forma adecuada para el cliente
+      const activities = await Promise.all(recentStudentSubjects.map(async (ss: StudentSubject) => {
+        const student = await storage.getStudent(ss.studentId);
+        const user = student ? await storage.getUser(student.userId) : null;
+        const subject = await storage.getSubject(ss.subjectId);
+        
+        let activityType = "clock";
+        if (ss.status === "acreditada") activityType = "check";
+        else if (ss.status === "cursando") activityType = "plus";
+        
+        const statusText = {
+          "acreditada": "acreditó",
+          "cursando": "se inscribió en",
+          "libre": "quedó libre en"
+        };
+        
+        const time = ss.updatedAt ? new Date(ss.updatedAt) : new Date();
+        const now = new Date();
+        const diffMs = now.getTime() - time.getTime();
+        const diffMins = Math.round(diffMs / 60000);
+        const diffHours = Math.round(diffMs / 3600000);
+        const diffDays = Math.round(diffMs / 86400000);
+        
+        let timeText = "Ahora";
+        if (diffMins > 0 && diffMins < 60) {
+          timeText = `Hace ${diffMins} minuto${diffMins !== 1 ? 's' : ''}`;
+        } else if (diffHours > 0 && diffHours < 24) {
+          timeText = `Hace ${diffHours} hora${diffHours !== 1 ? 's' : ''}`;
+        } else if (diffDays > 0) {
+          timeText = `Hace ${diffDays} día${diffDays !== 1 ? 's' : ''}`;
+        }
+        
+        return {
+          id: ss.id.toString(),
+          icon: activityType as "plus" | "check" | "clock",
+          iconBgColor: activityType === "check" ? "#34c759" : activityType === "plus" ? "#0070f3" : "#ffcc00",
+          actorName: user?.fullName || 'Estudiante',
+          action: statusText[ss.status as keyof typeof statusText],
+          objectName: subject?.name || 'Materia',
+          timestamp: timeText
+        };
+      }));
+      
+      res.json(activities);
+    } catch (error) {
+      console.error("Error fetching activities:", error);
+      res.status(500).json({ error: "Failed to fetch activities" });
+    }
+  });
+  
+  // Get upcoming exams
+  app.get("/api/exams", async (req, res) => {
+    try {
+      // Obtiene los próximos exámenes programados
+      const limit = parseInt(req.query.limit as string) || 5;
+      
+      // Obtener inscripciones tipo "examen" que tengan fecha futura
+      const now = new Date();
+      const enrollments = await storage.getEnrollments();
+      
+      // Filtrar solo las inscripciones a exámenes con fecha futura
+      const upcomingExams = enrollments
+        .filter(enrollment => 
+          enrollment.type === "examen" && 
+          enrollment.examDate && 
+          new Date(enrollment.examDate) > now
+        )
+        .sort((a, b) => {
+          if (!a.examDate || !b.examDate) return 0;
+          return new Date(a.examDate).getTime() - new Date(b.examDate).getTime();
+        })
+        .slice(0, limit);
+      
+      // Formatear los exámenes con detalles
+      const examsWithDetails = await Promise.all(upcomingExams.map(async (exam) => {
+        const subject = await storage.getSubject(exam.subjectId);
+        const career = subject ? await storage.getCareer(subject.careerId) : null;
+        
+        const examDate = new Date(exam.examDate as Date);
+        const day = examDate.getDate();
+        const month = examDate.toLocaleString('es-ES', { month: 'short' });
+        const year = examDate.getFullYear();
+        const formattedDate = `${day} ${month.charAt(0).toUpperCase() + month.slice(1)} ${year}`;
+        
+        return {
+          id: exam.id.toString(),
+          subject: subject?.name || 'Materia',
+          career: career?.name || 'Carrera',
+          date: formattedDate,
+          classroom: `Aula ${Math.floor(Math.random() * 100) + 100}` // Como no tenemos aulas en nuestro modelo, generamos uno
+        };
+      }));
+      
+      res.json(examsWithDetails);
+    } catch (error) {
+      console.error("Error fetching exams:", error);
+      res.status(500).json({ error: "Failed to fetch upcoming exams" });
     }
   });
   

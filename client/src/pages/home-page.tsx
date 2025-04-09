@@ -97,60 +97,29 @@ export default function HomePage() {
     }
   ] : [];
   
-  // Mock data for activities and exams since we don't have these endpoints yet
-  const activities: Activity[] = [
-    {
-      id: "1",
-      icon: "plus",
-      iconBgColor: "#0070f3",
-      actorName: "Maria González",
-      action: "se inscribió en",
-      objectName: "Análisis Matemático II",
-      timestamp: "Hace 35 minutos"
+  // Obtener actividades recientes desde la API
+  const { data: activities = [], isLoading: isLoadingActivities } = useQuery({
+    queryKey: ["/api/activities"],
+    queryFn: async () => {
+      const response = await fetch("/api/activities");
+      if (!response.ok) {
+        throw new Error("Failed to fetch activities");
+      }
+      return response.json();
     },
-    {
-      id: "2",
-      icon: "check",
-      iconBgColor: "#34c759",
-      actorName: "Prof. Martínez",
-      action: "actualizó las notas de",
-      objectName: "Álgebra I",
-      timestamp: "Hace 2 horas"
-    },
-    {
-      id: "3",
-      icon: "clock",
-      iconBgColor: "#ffcc00",
-      actorName: "Admin",
-      action: "publicó nuevo período de inscripciones",
-      objectName: "",
-      timestamp: "Hace 5 horas"
-    }
-  ];
+  });
   
-  const exams: Exam[] = [
-    {
-      id: "1",
-      subject: "Álgebra I",
-      career: "Prof. Matemática",
-      date: "15 Nov 2023",
-      classroom: "Aula 104"
+  // Obtener próximos exámenes desde la API
+  const { data: exams = [], isLoading: isLoadingExams } = useQuery({
+    queryKey: ["/api/exams"],
+    queryFn: async () => {
+      const response = await fetch("/api/exams");
+      if (!response.ok) {
+        throw new Error("Failed to fetch exams");
+      }
+      return response.json();
     },
-    {
-      id: "2",
-      subject: "Análisis II",
-      career: "Prof. Matemática",
-      date: "18 Nov 2023",
-      classroom: "Aula 203"
-    },
-    {
-      id: "3",
-      subject: "Gramática",
-      career: "Prof. Lengua",
-      date: "22 Nov 2023",
-      classroom: "Aula 108"
-    }
-  ];
+  });
   
   // Helper function to render activity icon
   const renderActivityIcon = (icon: Activity["icon"], bgColor: string) => {
@@ -227,61 +196,120 @@ export default function HomePage() {
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">Actividad Reciente</h2>
           
-          <div className="space-y-4">
-            {activities.map((activity) => (
-              <div key={activity.id} className="flex items-start pb-4 border-b border-[#e5e5ea]">
-                {renderActivityIcon(activity.icon, activity.iconBgColor)}
-                <div className="ml-3">
-                  <p className="text-[#3a3a3c]">
-                    <span className="font-medium">{activity.actorName}</span>
-                    {" "}{activity.action}{" "}
-                    {activity.objectName && <span className="font-medium">{activity.objectName}</span>}
-                  </p>
-                  <p className="text-[#8e8e93] text-sm">{activity.timestamp}</p>
+          {isLoadingActivities ? (
+            // Skeleton loaders para actividades
+            <div className="space-y-4">
+              {Array(3).fill(0).map((_, i) => (
+                <div key={i} className="flex items-start pb-4 border-b border-[#e5e5ea]">
+                  <Skeleton className="h-8 w-8 rounded-full mr-3" />
+                  <div className="w-full">
+                    <Skeleton className="h-4 w-full max-w-xs mb-2" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : activities.length > 0 ? (
+            // Mostrar actividades reales si hay
+            <div className="space-y-4">
+              {activities.map((activity: Activity) => (
+                <div key={activity.id} className="flex items-start pb-4 border-b border-[#e5e5ea]">
+                  {renderActivityIcon(activity.icon, activity.iconBgColor)}
+                  <div className="ml-3">
+                    <p className="text-[#3a3a3c]">
+                      <span className="font-medium">{activity.actorName}</span>
+                      {" "}{activity.action}{" "}
+                      {activity.objectName && <span className="font-medium">{activity.objectName}</span>}
+                    </p>
+                    <p className="text-[#8e8e93] text-sm">{activity.timestamp}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Mensaje si no hay actividades
+            <div className="py-8 text-center text-[#8e8e93]">
+              <p>No hay actividad reciente para mostrar.</p>
+              <p className="text-sm mt-1">Las actividades aparecerán aquí a medida que los usuarios interactúen con el sistema.</p>
+            </div>
+          )}
           
-          <div className="mt-4 text-center">
-            <Button variant="link" className="text-[#0070f3] text-sm font-medium">
-              Ver todas las actividades
-            </Button>
-          </div>
+          {activities.length > 0 && (
+            <div className="mt-4 text-center">
+              <Button variant="link" className="text-[#0070f3] text-sm font-medium">
+                Ver todas las actividades
+              </Button>
+            </div>
+          )}
         </div>
         
         {/* Upcoming Exams Section */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">Próximos Exámenes</h2>
           
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
-                  <th className="py-3 px-4 font-medium rounded-l-lg">Materia</th>
-                  <th className="py-3 px-4 font-medium">Carrera</th>
-                  <th className="py-3 px-4 font-medium">Fecha</th>
-                  <th className="py-3 px-4 font-medium">Aula</th>
-                  <th className="py-3 px-4 font-medium rounded-r-lg">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="text-[#3a3a3c]">
-                {exams.map((exam) => (
-                  <tr key={exam.id} className="border-b border-[#e5e5ea]">
-                    <td className="py-3 px-4">{exam.subject}</td>
-                    <td className="py-3 px-4">{exam.career}</td>
-                    <td className="py-3 px-4">{exam.date}</td>
-                    <td className="py-3 px-4">{exam.classroom}</td>
-                    <td className="py-3 px-4">
-                      <Button variant="link" className="text-[#0070f3] hover:underline text-sm font-medium">
-                        Ver detalles
-                      </Button>
-                    </td>
+          {isLoadingExams ? (
+            // Skeleton loaders para exámenes
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
+                    <th className="py-3 px-4 font-medium rounded-l-lg">Materia</th>
+                    <th className="py-3 px-4 font-medium">Carrera</th>
+                    <th className="py-3 px-4 font-medium">Fecha</th>
+                    <th className="py-3 px-4 font-medium">Aula</th>
+                    <th className="py-3 px-4 font-medium rounded-r-lg">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Array(3).fill(0).map((_, i) => (
+                    <tr key={i} className="border-b border-[#e5e5ea]">
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-16" /></td>
+                      <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : exams.length > 0 ? (
+            // Mostrar exámenes reales si hay
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="bg-[#f5f5f7] text-[#8e8e93] text-left text-sm">
+                    <th className="py-3 px-4 font-medium rounded-l-lg">Materia</th>
+                    <th className="py-3 px-4 font-medium">Carrera</th>
+                    <th className="py-3 px-4 font-medium">Fecha</th>
+                    <th className="py-3 px-4 font-medium">Aula</th>
+                    <th className="py-3 px-4 font-medium rounded-r-lg">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[#3a3a3c]">
+                  {exams.map((exam: Exam) => (
+                    <tr key={exam.id} className="border-b border-[#e5e5ea]">
+                      <td className="py-3 px-4">{exam.subject}</td>
+                      <td className="py-3 px-4">{exam.career}</td>
+                      <td className="py-3 px-4">{exam.date}</td>
+                      <td className="py-3 px-4">{exam.classroom}</td>
+                      <td className="py-3 px-4">
+                        <Button variant="link" className="text-[#0070f3] hover:underline text-sm font-medium">
+                          Ver detalles
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            // Mensaje si no hay exámenes
+            <div className="py-8 text-center text-[#8e8e93]">
+              <p>No hay exámenes programados próximamente.</p>
+              <p className="text-sm mt-1">Los exámenes aparecerán aquí cuando sean programados en el sistema.</p>
+            </div>
+          )}
         </div>
       </div>
     </>

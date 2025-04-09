@@ -11,7 +11,7 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import { pool } from "./db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { 
   users, 
   careers, 
@@ -62,6 +62,7 @@ export interface IStorage {
   // Student-Subject relationships
   getStudentSubjects(studentId: number): Promise<StudentSubject[]>;
   getStudentSubjectsWithDetails(studentId: number): Promise<any[]>;
+  getRecentStudentSubjects(limit?: number): Promise<StudentSubject[]>;
   updateStudentSubjectStatus(id: number, status: string, date?: Date): Promise<StudentSubject>;
   updateStudentSubject(id: number, data: {
     status?: string;
@@ -343,6 +344,15 @@ export class DatabaseStorage implements IStorage {
   async addStudentSubject(ssData: InsertStudentSubject): Promise<StudentSubject> {
     const [studentSubject] = await db.insert(studentSubjects).values(ssData).returning();
     return studentSubject;
+  }
+  
+  async getRecentStudentSubjects(limit: number = 5): Promise<StudentSubject[]> {
+    // Obtener las últimas actualizaciones de student-subjects ordenadas por fecha de actualización
+    return db
+      .select()
+      .from(studentSubjects)
+      .orderBy(sql`${studentSubjects.updatedAt} DESC`)
+      .limit(limit);
   }
   
   async getEnrollments(studentId?: number, subjectId?: number): Promise<Enrollment[]> {
