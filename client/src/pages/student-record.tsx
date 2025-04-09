@@ -57,10 +57,26 @@ const studentSubjectSchema = z.object({
   studentId: z.coerce.number(),
   subjectId: z.coerce.number(),
   status: z.enum(["cursando", "acreditada", "libre"]),
-  grade: z.coerce.number().min(4, "La nota debe ser al menos 4").max(10, "La nota máxima es 10").optional(),
-  date: z.string().optional(),
-  book: z.string().optional(),
-  folio: z.string().optional()
+  grade: z.union([
+    z.coerce.number().min(4, "La nota debe ser al menos 4").max(10, "La nota máxima es 10"),
+    z.literal("").transform(() => null),
+    z.null()
+  ]).optional(),
+  date: z.union([
+    z.string().min(1),
+    z.literal("").transform(() => null),
+    z.null()
+  ]).optional(),
+  book: z.union([
+    z.string().min(1),
+    z.literal("").transform(() => null),
+    z.null()
+  ]).optional(),
+  folio: z.union([
+    z.string().min(1),
+    z.literal("").transform(() => null),
+    z.null()
+  ]).optional()
 });
 
 type StudentSubjectFormValues = z.infer<typeof studentSubjectSchema>;
@@ -196,16 +212,21 @@ export default function StudentRecord() {
         studentId: selectedSubject.studentId,
         subjectId: selectedSubject.subjectId,
         status: selectedSubject.status as any,
-        grade: selectedSubject.grade ? (selectedSubject.grade as number) : undefined, // Fix type issue
-        date: selectedSubject.date ? new Date(selectedSubject.date).toISOString().split('T')[0] : undefined,
-        book: selectedSubject.book || undefined,
-        folio: selectedSubject.folio || undefined
+        // Fix tipo datos para campos opcionales/nulos usando null explícitamente
+        grade: selectedSubject.grade ? (selectedSubject.grade as number) : null,
+        date: selectedSubject.date ? new Date(selectedSubject.date).toISOString().split('T')[0] : null,
+        book: selectedSubject.book || null,
+        folio: selectedSubject.folio || null
       });
     } else {
       subjectForm.reset({
         studentId: studentId,
         subjectId: 0,
-        status: "libre"
+        status: "libre",
+        grade: null,
+        date: null,
+        book: null,
+        folio: null
       });
     }
   }, [selectedSubject, studentId]);
@@ -476,8 +497,13 @@ export default function StudentRecord() {
                                       min="4" 
                                       max="10" 
                                       step="1"
-                                      {...field}
-                                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                      value={field.value === null || field.value === undefined ? "" : field.value}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        field.onChange(value ? parseInt(value) : "");
+                                      }}
+                                      onBlur={field.onBlur}
+                                      name={field.name}
                                     />
                                   </FormControl>
                                   <FormMessage />
@@ -492,7 +518,13 @@ export default function StudentRecord() {
                                 <FormItem>
                                   <FormLabel>Fecha</FormLabel>
                                   <FormControl>
-                                    <Input type="date" {...field} />
+                                    <Input 
+                                      type="date" 
+                                      value={field.value === null || field.value === undefined ? "" : field.value}
+                                      onChange={(e) => field.onChange(e.target.value || "")}
+                                      onBlur={field.onBlur}
+                                      name={field.name}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -508,7 +540,12 @@ export default function StudentRecord() {
                                 <FormItem>
                                   <FormLabel>Libro</FormLabel>
                                   <FormControl>
-                                    <Input {...field} />
+                                    <Input 
+                                      value={field.value === null || field.value === undefined ? "" : field.value}
+                                      onChange={(e) => field.onChange(e.target.value || "")}
+                                      onBlur={field.onBlur}
+                                      name={field.name}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -522,7 +559,12 @@ export default function StudentRecord() {
                                 <FormItem>
                                   <FormLabel>Folio</FormLabel>
                                   <FormControl>
-                                    <Input {...field} />
+                                    <Input 
+                                      value={field.value === null || field.value === undefined ? "" : field.value}
+                                      onChange={(e) => field.onChange(e.target.value || "")}
+                                      onBlur={field.onBlur}
+                                      name={field.name}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
