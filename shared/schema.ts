@@ -120,6 +120,9 @@ export const insertStudentSubjectSchema = createInsertSchema(studentSubjects).pi
   date: true,
   book: true,
   folio: true,
+}).extend({
+  // Permitir string para date y convertirlo a Date en el servidor
+  date: z.union([z.date(), z.string(), z.null()]).optional()
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({

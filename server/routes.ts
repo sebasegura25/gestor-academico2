@@ -429,10 +429,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/student-subjects", async (req, res) => {
     try {
-      const validatedData = insertStudentSubjectSchema.parse(req.body);
+      console.log("Received student-subject data:", req.body);
+      
+      let data = req.body;
+      
+      // Convertir fecha de string a Date si es necesario
+      if (data.date && typeof data.date === 'string') {
+        data = {
+          ...data,
+          date: new Date(data.date)
+        };
+      }
+      
+      // Validar los datos
+      const validatedData = insertStudentSubjectSchema.parse(data);
+      
+      console.log("Validated data:", validatedData);
+      
       const studentSubject = await storage.addStudentSubject(validatedData);
       res.status(201).json(studentSubject);
     } catch (error) {
+      console.error("Error adding student subject:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
@@ -442,6 +459,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.patch("/api/student-subjects/:id", async (req, res) => {
     try {
+      console.log("Received update student-subject data:", req.body);
+      
       const { status, grade, date, book, folio } = req.body;
       
       if (status && !["cursando", "acreditada", "libre"].includes(status)) {
@@ -453,20 +472,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Grade is required for accredited subjects" });
       }
       
+      // Convertir a tipo de datos adecuado y actualizar
+      const updateData = {
+        status,
+        grade: grade ? parseInt(grade) : null,
+        date: date ? new Date(date) : null,
+        book,
+        folio
+      };
+      
+      console.log("Processed update data:", updateData);
+      
       // Actualizar el estado y datos adicionales
       const studentSubject = await storage.updateStudentSubject(
         parseInt(req.params.id),
-        {
-          status,
-          grade: grade ? parseInt(grade) : null,
-          date: date ? new Date(date) : null,
-          book,
-          folio
-        }
+        updateData
       );
       
       res.json(studentSubject);
     } catch (error) {
+      console.error("Error updating student subject:", error);
       res.status(500).json({ error: "Failed to update student subject" });
     }
   });
