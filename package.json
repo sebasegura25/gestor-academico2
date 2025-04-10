@@ -1,4 +1,12 @@
 {
+  "scripts": {
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npm install && npm run build",
+    "build:server": "tsc --project tsconfig.server.json",
+    "start": "node server/index.js"
+  }
+}
+{
   "name": "rest-express",
   "version": "1.0.0",
   "type": "module",
@@ -105,3 +113,4 @@
     "bufferutil": "^4.0.8"
   }
 }
+
