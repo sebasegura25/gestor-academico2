@@ -83,3 +83,10 @@ export function serveStatic(app: Express) {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
+function serveStatic(app: express.Express) {
+  const distPath = path.resolve(__dirname, '../../dist/public');
+  app.use(express.static(distPath));
+  app.use('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
