@@ -21,3 +21,14 @@ export const pool = new Pool({
 
 // Configuración de Drizzle con el esquema
 export const db = drizzle(pool, { schema });
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import ws from "ws";
+
+// Configuración crítica para entornos serverless
+neonConfig.webSocketConstructor = ws; 
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: true
+});
